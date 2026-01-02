@@ -11,6 +11,12 @@
   // Audio playback state
   let audioContext = null;
   let currentSource = null;
+  let isPaused = false;
+
+  // Streaming audio state
+  let audioQueue = [];
+  let nextPlayTime = 0;
+  let isStreamingPlayback = false;
 
   // Initialize
   init();
@@ -44,8 +50,14 @@
           browser.runtime.sendMessage({ action: 'read', text: selection });
         }
         break;
+      case 'startLoading':
+        setWidgetState('loading');
+        break;
       case 'playAudio':
         playAudioFromBase64(message.audioData);
+        break;
+      case 'playAudioChunk':
+        handleAudioChunk(message.audioData, message.isFirst, message.isFinal);
         break;
       case 'stopAudio':
         stopAudio();
@@ -129,8 +141,41 @@
     }
   }
 
+  // Toggle pause/resume
+  async function togglePause() {
+    if (!audioContext || !currentSource) return;
+
+    const pauseBtn = statusIndicator?.querySelector('.read11-pause');
+
+    if (isPaused) {
+      // Resume
+      await audioContext.resume();
+      isPaused = false;
+      if (pauseBtn) pauseBtn.textContent = '⏸';
+      setWidgetState('playing');
+    } else {
+      // Pause
+      await audioContext.suspend();
+      isPaused = true;
+      if (pauseBtn) pauseBtn.textContent = '▶';
+      // Update widget to show paused state
+      const icon = statusIndicator?.querySelector('.read11-icon');
+      const text = statusIndicator?.querySelector('.read11-text');
+      if (icon) icon.textContent = '⏸';
+      if (text) text.textContent = 'Paused';
+    }
+  }
+
   // Stop current audio playback
   function stopAudio() {
+    // Stop any streaming sources
+    for (const source of audioQueue) {
+      try {
+        source.stop();
+      } catch (e) {}
+    }
+    audioQueue = [];
+
     if (currentSource) {
       try {
         currentSource.stop();
@@ -139,7 +184,101 @@
       }
       currentSource = null;
     }
+
+    isPaused = false;
+    isStreamingPlayback = false;
+    nextPlayTime = 0;
+
+    // Reset pause button
+    const pauseBtn = statusIndicator?.querySelector('.read11-pause');
+    if (pauseBtn) pauseBtn.textContent = '⏸';
     setReadingState(false);
+  }
+
+  // Handle streaming audio chunk (PCM format)
+  async function handleAudioChunk(base64Data, isFirst, isFinal) {
+    try {
+      // Initialize audio context if needed
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+
+      if (isFirst) {
+        // Reset streaming state
+        stopAudio();
+        isStreamingPlayback = true;
+        nextPlayTime = audioContext.currentTime;
+        setWidgetState('playing');
+      }
+
+      if (base64Data && base64Data.length > 0) {
+        // Convert base64 to PCM audio buffer
+        const arrayBuffer = base64ToArrayBuffer(base64Data);
+        const audioBuffer = createPCMAudioBuffer(arrayBuffer);
+
+        // Create and schedule source
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioContext.destination);
+
+        // Ensure we don't schedule in the past
+        if (nextPlayTime < audioContext.currentTime) {
+          nextPlayTime = audioContext.currentTime;
+        }
+
+        source.start(nextPlayTime);
+        nextPlayTime += audioBuffer.duration;
+
+        audioQueue.push(source);
+
+        // Clean up finished sources
+        source.onended = () => {
+          const idx = audioQueue.indexOf(source);
+          if (idx > -1) audioQueue.splice(idx, 1);
+
+          // Check if all playback is done
+          if (audioQueue.length === 0 && isFinal) {
+            isStreamingPlayback = false;
+            setReadingState(false);
+          }
+        };
+
+        console.log('Read11: Scheduled chunk, duration:', audioBuffer.duration.toFixed(2), 's, queue:', audioQueue.length);
+      }
+
+      if (isFinal && audioQueue.length === 0) {
+        // No audio was played
+        isStreamingPlayback = false;
+        setReadingState(false);
+      }
+
+    } catch (error) {
+      console.error('Read11: Chunk playback error:', error);
+      showNotification('Audio playback failed: ' + error.message, 'error');
+      setReadingState(false);
+    }
+  }
+
+  // Create AudioBuffer from PCM data (16-bit signed, 44100 Hz, mono)
+  function createPCMAudioBuffer(arrayBuffer) {
+    const dataView = new DataView(arrayBuffer);
+    const numSamples = arrayBuffer.byteLength / 2; // 16-bit = 2 bytes per sample
+
+    const audioBuffer = audioContext.createBuffer(1, numSamples, 44100);
+    const channelData = audioBuffer.getChannelData(0);
+
+    for (let i = 0; i < numSamples; i++) {
+      // Read 16-bit signed integer (little-endian)
+      const sample = dataView.getInt16(i * 2, true);
+      // Convert to float (-1.0 to 1.0)
+      channelData[i] = sample / 32768;
+    }
+
+    return audioBuffer;
   }
 
   function handleVisibilityChange() {
@@ -157,10 +296,18 @@
       <div class="read11-status-content">
         <span class="read11-icon">🔊</span>
         <span class="read11-text">Reading...</span>
-        <button class="read11-stop" title="Stop reading (Alt+X)">✕</button>
+        <div class="read11-controls">
+          <button class="read11-pause" title="Pause/Resume">⏸</button>
+          <button class="read11-stop" title="Stop (Alt+X)">✕</button>
+        </div>
       </div>
     `;
     document.body.appendChild(statusIndicator);
+
+    // Add pause button handler
+    statusIndicator.querySelector('.read11-pause').addEventListener('click', () => {
+      togglePause();
+    });
 
     // Add stop button handler
     statusIndicator.querySelector('.read11-stop').addEventListener('click', () => {
@@ -169,17 +316,38 @@
     });
   }
 
+  function setWidgetState(state) {
+    // States: 'hidden', 'loading', 'playing'
+    if (!statusIndicator) return;
+
+    const icon = statusIndicator.querySelector('.read11-icon');
+    const text = statusIndicator.querySelector('.read11-text');
+
+    switch (state) {
+      case 'loading':
+        statusIndicator.classList.remove('read11-hidden');
+        statusIndicator.classList.add('read11-visible', 'read11-loading');
+        statusIndicator.classList.remove('read11-playing');
+        icon.textContent = '⏳';
+        text.textContent = 'Loading...';
+        break;
+      case 'playing':
+        statusIndicator.classList.remove('read11-hidden', 'read11-loading');
+        statusIndicator.classList.add('read11-visible', 'read11-playing');
+        icon.textContent = '🔊';
+        text.textContent = 'Reading...';
+        break;
+      case 'hidden':
+      default:
+        statusIndicator.classList.remove('read11-visible', 'read11-loading', 'read11-playing');
+        statusIndicator.classList.add('read11-hidden');
+        break;
+    }
+  }
+
   function setReadingState(reading) {
     isReading = reading;
-    if (statusIndicator) {
-      if (reading) {
-        statusIndicator.classList.remove('read11-hidden');
-        statusIndicator.classList.add('read11-visible');
-      } else {
-        statusIndicator.classList.remove('read11-visible');
-        statusIndicator.classList.add('read11-hidden');
-      }
-    }
+    setWidgetState(reading ? 'playing' : 'hidden');
   }
 
   // Schedule auto-read after page load

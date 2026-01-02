@@ -39,13 +39,12 @@ browser.runtime.onInstalled.addListener(async () => {
 browser.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'read-selection' && info.selectionText) {
     try {
-      const audioData = await generateAudio(info.selectionText);
-      if (audioData && tab?.id) {
-        browser.tabs.sendMessage(tab.id, {
-          action: 'playAudio',
-          audioData: audioData
-        });
+      // Show loading state first
+      if (tab?.id) {
+        browser.tabs.sendMessage(tab.id, { action: 'startLoading' }).catch(() => {});
       }
+      // Use streaming for faster playback start
+      await generateAudioStreaming(info.selectionText, tab?.id);
     } catch (error) {
       console.error('Read11 context menu error:', error);
       if (tab?.id) {
@@ -84,14 +83,12 @@ browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     try {
       switch (message.action) {
         case 'read':
-          const audioData = await generateAudio(message.text);
-          if (audioData && sender.tab?.id) {
-            // Send audio data to content script for playback
-            browser.tabs.sendMessage(sender.tab.id, {
-              action: 'playAudio',
-              audioData: audioData
-            });
+          // Show loading state first
+          if (sender.tab?.id) {
+            browser.tabs.sendMessage(sender.tab.id, { action: 'startLoading' }).catch(() => {});
           }
+          // Use streaming for faster playback start
+          await generateAudioStreaming(message.text, sender.tab?.id);
           sendResponse({ success: true });
           break;
         case 'stop':
@@ -155,7 +152,114 @@ async function fetchVoices() {
   return data.voices;
 }
 
-// Generate audio from text using ElevenLabs API (returns base64 audio data)
+// Generate audio from text using ElevenLabs streaming API
+async function generateAudioStreaming(text, tabId) {
+  if (!text || text.trim().length === 0) {
+    throw new Error('No text provided');
+  }
+
+  const settings = await getSettings();
+  if (!settings.apiKey) {
+    throw new Error('API key not configured');
+  }
+
+  // Use streaming endpoint with PCM format for low-latency playback
+  const response = await fetch(`${API_BASE}/text-to-speech/${settings.voiceId}/stream?output_format=pcm_44100`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'xi-api-key': settings.apiKey
+    },
+    body: JSON.stringify({
+      text: text,
+      model_id: settings.modelId,
+      voice_settings: {
+        stability: settings.stability,
+        similarity_boost: settings.similarityBoost,
+        style: settings.style,
+        speed: settings.speed
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API error: ${response.status} - ${errorText}`);
+  }
+
+  // Stream the audio data
+  const reader = response.body.getReader();
+  let chunks = [];
+  let totalBytes = 0;
+  let sentFirstChunk = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+
+    if (done) break;
+
+    chunks.push(value);
+    totalBytes += value.length;
+
+    // Send first chunk after ~50KB to start playback quickly
+    if (!sentFirstChunk && totalBytes >= 50000) {
+      const combined = concatenateChunks(chunks);
+      const base64 = arrayBufferToBase64(combined.buffer);
+
+      if (tabId) {
+        browser.tabs.sendMessage(tabId, {
+          action: 'playAudioChunk',
+          audioData: base64,
+          isFirst: true,
+          isFinal: false
+        }).catch(() => {});
+      }
+
+      chunks = [];
+      sentFirstChunk = true;
+      console.log('Read11: Sent first chunk:', totalBytes, 'bytes');
+    }
+  }
+
+  // Send remaining data
+  if (chunks.length > 0) {
+    const combined = concatenateChunks(chunks);
+    const base64 = arrayBufferToBase64(combined.buffer);
+
+    if (tabId) {
+      browser.tabs.sendMessage(tabId, {
+        action: 'playAudioChunk',
+        audioData: base64,
+        isFirst: !sentFirstChunk,
+        isFinal: true
+      }).catch(() => {});
+    }
+  } else if (sentFirstChunk && tabId) {
+    // Signal end if we already sent data
+    browser.tabs.sendMessage(tabId, {
+      action: 'playAudioChunk',
+      audioData: '',
+      isFirst: false,
+      isFinal: true
+    }).catch(() => {});
+  }
+
+  console.log('Read11: Total audio size:', totalBytes, 'bytes');
+}
+
+// Concatenate Uint8Array chunks
+function concatenateChunks(chunks) {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+
+// Non-streaming fallback (for testing/debugging)
 async function generateAudio(text) {
   if (!text || text.trim().length === 0) {
     throw new Error('No text provided');
