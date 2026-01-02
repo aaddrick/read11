@@ -52,9 +52,31 @@ async function initTTS() {
     // Dynamic import from CDN
     const { KokoroTTS } = await import('https://cdn.jsdelivr.net/npm/kokoro-js@1/+esm');
 
+    // Check for WebGPU support (much faster than WASM)
+    let device = 'wasm';
+    let dtype = 'q8';
+
+    if (navigator.gpu) {
+      try {
+        const adapter = await navigator.gpu.requestAdapter();
+        if (adapter) {
+          device = 'webgpu';
+          dtype = 'fp32'; // WebGPU works best with fp32
+          console.log('Read11: Using WebGPU backend (fast)');
+        }
+      } catch (e) {
+        console.log('Read11: WebGPU not available, using WASM');
+      }
+    } else {
+      console.log('Read11: WebGPU not supported, using WASM (slower)');
+    }
+
+    statusEl.textContent = `Loading Kokoro (${device})...`;
+    notifyStatus('loading', { message: `Loading Kokoro (${device})...` });
+
     tts = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-v1.0-ONNX", {
-      dtype: "q8",
-      device: "wasm",
+      dtype: dtype,
+      device: device,
       progress_callback: (progress) => {
         if (progress.status === 'downloading') {
           isFirstRun = true;
