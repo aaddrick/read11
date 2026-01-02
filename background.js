@@ -279,7 +279,7 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
-// Test a voice with sample text
+// Test a voice with sample text (plays directly from background script)
 async function testVoice(voiceId, text = 'Hello, this is a test of the Read11 screen reader.') {
   const settings = await getSettings();
   const originalVoiceId = settings.voiceId;
@@ -289,21 +289,47 @@ async function testVoice(voiceId, text = 'Hello, this is a test of the Read11 sc
   await browser.storage.local.set({ settings });
 
   try {
-    // Get active tab and show loading state
-    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-    const tabId = tabs[0]?.id;
+    // Generate audio using non-streaming for simpler playback
+    const base64Audio = await generateAudio(text);
 
-    if (tabId) {
-      browser.tabs.sendMessage(tabId, { action: 'startLoading' }).catch(() => {});
-    }
-
-    // Use streaming function which uses current settings
-    await generateAudioStreaming(text, tabId);
+    // Play directly in background script (options page doesn't have content script)
+    await playAudioInBackground(base64Audio);
   } finally {
     // Restore original voice
     settings.voiceId = originalVoiceId;
     await browser.storage.local.set({ settings });
   }
+}
+
+// Play audio directly in background script (for testing)
+function playAudioInBackground(base64Audio) {
+  return new Promise((resolve, reject) => {
+    try {
+      const binaryString = atob(base64Audio);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      const blob = new Blob([bytes.buffer], { type: 'audio/mpeg' });
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        resolve();
+      };
+
+      audio.onerror = (e) => {
+        URL.revokeObjectURL(url);
+        reject(new Error('Audio playback failed'));
+      };
+
+      audio.play().catch(reject);
+    } catch (error) {
+      reject(error);
+    }
+  });
 }
 
 // Get current settings with validation
