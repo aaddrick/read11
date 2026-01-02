@@ -195,7 +195,14 @@ body {
   font-size: 12px;
 }
 
-.shortcut span {
+.shortcut .keys {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #64748b;
+}
+
+.shortcut .action {
   color: #64748b;
 }
 
