@@ -76,7 +76,7 @@
       <div class="read11-status-content">
         <span class="read11-icon">🔊</span>
         <span class="read11-text">Reading...</span>
-        <button class="read11-stop" title="Stop reading (Alt+S)">✕</button>
+        <button class="read11-stop" title="Stop reading (Alt+X)">✕</button>
       </div>
     `;
     document.body.appendChild(statusIndicator);
@@ -84,6 +84,7 @@
     // Add stop button handler
     statusIndicator.querySelector('.read11-stop').addEventListener('click', () => {
       browser.runtime.sendMessage({ action: 'stop' });
+      setReadingState(false);
     });
   }
 

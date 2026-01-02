@@ -46,7 +46,7 @@
     },
     "stop-reading": {
       "suggested_key": {
-        "default": "Alt+S"
+        "default": "Alt+X"
       },
       "description": "Stop reading"
     },
