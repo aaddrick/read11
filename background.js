@@ -521,28 +521,20 @@ async function generateAudioKokoro(text, tabId) {
     }
   }
 
-  // Generate audio
+  // Request audio generation (async - response comes via separate message)
   const result = await browser.tabs.sendMessage(kokoroTabId, {
     action: 'kokoro-generate',
     text: text,
-    voice: settings.kokoroVoiceId || 'af_heart'
+    voice: settings.kokoroVoiceId || 'af_heart',
+    targetTabId: tabId
   });
 
   if (result.error) {
     throw new Error(result.error);
   }
 
-  console.log('Read11: Kokoro audio generated');
-
-  // Send to content script for playback
-  if (tabId) {
-    browser.tabs.sendMessage(tabId, {
-      action: 'playAudio',
-      audioData: result.audioData,
-      mimeType: result.mimeType,
-      engine: 'kokoro'
-    }).catch(() => {});
-  }
+  console.log('Read11: Kokoro generation started');
+  // Audio will be delivered via 'kokoro-audio-ready' message
 }
 
 // Determine which TTS engine to use
@@ -648,7 +640,7 @@ async function testKokoroVoice(voiceId, text = 'Hello, this is a test of the Rea
   await playAudioInBackground(result.audioData, result.mimeType);
 }
 
-// Handle Kokoro status updates from worker
+// Handle Kokoro messages from worker
 browser.runtime.onMessage.addListener((message, sender) => {
   if (message.action === 'kokoro-status-update') {
     console.log('Read11: Kokoro status:', message.status, message.message);
@@ -665,6 +657,34 @@ browser.runtime.onMessage.addListener((message, sender) => {
           }).catch(() => {});
         }
       });
+    }
+  }
+
+  // Handle completed audio from Kokoro worker
+  if (message.action === 'kokoro-audio-ready') {
+    console.log('Read11: Kokoro audio ready, sending to tab:', message.targetTabId);
+
+    if (message.targetTabId) {
+      browser.tabs.sendMessage(message.targetTabId, {
+        action: 'playAudio',
+        audioData: message.audioData,
+        mimeType: message.mimeType,
+        engine: 'kokoro'
+      }).catch((err) => {
+        console.error('Read11: Failed to send audio to tab:', err);
+      });
+    }
+  }
+
+  // Handle Kokoro generation error
+  if (message.action === 'kokoro-audio-error') {
+    console.error('Read11: Kokoro generation error:', message.error);
+
+    if (message.targetTabId) {
+      browser.tabs.sendMessage(message.targetTabId, {
+        action: 'error',
+        message: 'Kokoro TTS error: ' + message.error
+      }).catch(() => {});
     }
   }
 });

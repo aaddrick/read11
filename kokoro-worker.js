@@ -153,32 +153,46 @@ browser.runtime.onMessage.addListener((message, sender) => {
         }
       }
 
-      try {
-        statusEl.textContent = 'Generating speech...';
-        notifyStatus('generating', { message: 'Generating speech...' });
+      // Return immediately, send audio via separate message to avoid timeout
+      const targetTabId = message.targetTabId;
 
-        const audio = await tts.generate(message.text, {
-          voice: message.voice || 'af_heart'
-        });
+      (async () => {
+        try {
+          statusEl.textContent = 'Generating speech...';
+          notifyStatus('generating', { message: 'Generating speech...' });
 
-        const blob = audio.toBlob();
-        const arrayBuffer = await blob.arrayBuffer();
-        const base64 = arrayBufferToBase64(arrayBuffer);
+          const audio = await tts.generate(message.text, {
+            voice: message.voice || 'af_heart'
+          });
 
-        statusEl.textContent = 'Kokoro TTS ready';
-        notifyStatus('ready', { message: 'Kokoro TTS ready' });
+          const blob = audio.toBlob();
+          const arrayBuffer = await blob.arrayBuffer();
+          const base64 = arrayBufferToBase64(arrayBuffer);
 
-        return {
-          success: true,
-          audioData: base64,
-          mimeType: 'audio/wav'
-        };
-      } catch (error) {
-        statusEl.textContent = 'Generation failed: ' + error.message;
-        notifyStatus('error', { message: error.message });
-        console.error('Read11: Kokoro generate error:', error);
-        return { error: error.message };
-      }
+          statusEl.textContent = 'Kokoro TTS ready';
+          notifyStatus('ready', { message: 'Kokoro TTS ready' });
+
+          // Send audio to background script
+          browser.runtime.sendMessage({
+            action: 'kokoro-audio-ready',
+            audioData: base64,
+            mimeType: 'audio/wav',
+            targetTabId: targetTabId
+          });
+        } catch (error) {
+          statusEl.textContent = 'Generation failed: ' + error.message;
+          notifyStatus('error', { message: error.message });
+          console.error('Read11: Kokoro generate error:', error);
+
+          browser.runtime.sendMessage({
+            action: 'kokoro-audio-error',
+            error: error.message,
+            targetTabId: targetTabId
+          });
+        }
+      })();
+
+      return { success: true, pending: true };
     }
 
     return { error: 'Unknown action' };
