@@ -8,6 +8,10 @@
   let statusIndicator = null;
   let lastReadContent = '';
 
+  // Audio playback state
+  let audioContext = null;
+  let currentSource = null;
+
   // Initialize
   init();
 
@@ -40,6 +44,12 @@
           browser.runtime.sendMessage({ action: 'read', text: selection });
         }
         break;
+      case 'playAudio':
+        playAudioFromBase64(message.audioData);
+        break;
+      case 'stopAudio':
+        stopAudio();
+        break;
       case 'readingStarted':
         setReadingState(true);
         break;
@@ -54,11 +64,82 @@
         break;
       case 'error':
         showNotification(message.message, 'error');
+        setReadingState(false);
         break;
       case 'readPageContent':
         readPageContent();
         break;
     }
+  }
+
+  // Convert base64 to ArrayBuffer
+  function base64ToArrayBuffer(base64) {
+    const binaryString = atob(base64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes.buffer;
+  }
+
+  // Play audio from base64 data using Web Audio API
+  async function playAudioFromBase64(base64Data) {
+    try {
+      // Create or resume audio context
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      }
+
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+
+      // Stop any current playback
+      stopAudio();
+
+      // Convert base64 to ArrayBuffer
+      const arrayBuffer = base64ToArrayBuffer(base64Data);
+
+      console.log('Read11: Decoding audio, size:', arrayBuffer.byteLength);
+
+      // Decode the audio data
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+      console.log('Read11: Audio decoded, duration:', audioBuffer.duration, 'seconds');
+
+      // Create and configure source
+      currentSource = audioContext.createBufferSource();
+      currentSource.buffer = audioBuffer;
+      currentSource.connect(audioContext.destination);
+
+      // Handle playback end
+      currentSource.onended = () => {
+        currentSource = null;
+        setReadingState(false);
+      };
+
+      // Start playback
+      setReadingState(true);
+      currentSource.start(0);
+
+    } catch (error) {
+      console.error('Read11: Audio playback error:', error);
+      showNotification('Audio playback failed: ' + error.message, 'error');
+      setReadingState(false);
+    }
+  }
+
+  // Stop current audio playback
+  function stopAudio() {
+    if (currentSource) {
+      try {
+        currentSource.stop();
+      } catch (e) {
+        // Ignore errors if already stopped
+      }
+      currentSource = null;
+    }
+    setReadingState(false);
   }
 
   function handleVisibilityChange() {
@@ -83,8 +164,8 @@
 
     // Add stop button handler
     statusIndicator.querySelector('.read11-stop').addEventListener('click', () => {
+      stopAudio();
       browser.runtime.sendMessage({ action: 'stop' });
-      setReadingState(false);
     });
   }
 

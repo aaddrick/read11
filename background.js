@@ -16,7 +16,6 @@ const DEFAULT_SETTINGS = {
 };
 
 // State
-let currentAudio = null;
 let isPlaying = false;
 
 // Initialize extension
@@ -59,25 +58,60 @@ browser.commands.onCommand.addListener((command) => {
 });
 
 // Handle messages from content script and popup
-browser.runtime.onMessage.addListener((message, sender) => {
-  switch (message.action) {
-    case 'read':
-      return readText(message.text, sender.tab?.id);
-    case 'stop':
-      return stopReading();
-    case 'getStatus':
-      return Promise.resolve({ isPlaying, autoRead: getAutoReadState() });
-    case 'getVoices':
-      return fetchVoices();
-    case 'testVoice':
-      return testVoice(message.voiceId, message.text);
-    case 'toggleAutoRead':
-      return toggleAutoRead();
-    case 'setAutoRead':
-      return setAutoRead(message.enabled);
-    default:
-      return Promise.resolve();
-  }
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  // Handle async operations without returning Promise directly to avoid DataCloneError
+  (async () => {
+    try {
+      switch (message.action) {
+        case 'read':
+          const audioData = await generateAudio(message.text);
+          if (audioData && sender.tab?.id) {
+            // Send audio data to content script for playback
+            browser.tabs.sendMessage(sender.tab.id, {
+              action: 'playAudio',
+              audioData: audioData
+            });
+          }
+          sendResponse({ success: true });
+          break;
+        case 'stop':
+          // Notify all tabs to stop
+          const tabs = await browser.tabs.query({});
+          for (const tab of tabs) {
+            browser.tabs.sendMessage(tab.id, { action: 'stopAudio' }).catch(() => {});
+          }
+          isPlaying = false;
+          sendResponse({ success: true });
+          break;
+        case 'getStatus':
+          const autoRead = await getAutoReadState();
+          sendResponse({ isPlaying, autoRead });
+          break;
+        case 'getVoices':
+          const voices = await fetchVoices();
+          sendResponse(voices);
+          break;
+        case 'testVoice':
+          await testVoice(message.voiceId, message.text);
+          sendResponse({ success: true });
+          break;
+        case 'toggleAutoRead':
+          const result = await toggleAutoRead();
+          sendResponse(result);
+          break;
+        case 'setAutoRead':
+          const setResult = await setAutoRead(message.enabled);
+          sendResponse(setResult);
+          break;
+        default:
+          sendResponse({});
+      }
+    } catch (error) {
+      console.error('Read11 message handler error:', error);
+      sendResponse({ error: error.message });
+    }
+  })();
+  return true; // Keep message channel open for async response
 });
 
 // Fetch available voices from ElevenLabs
@@ -101,113 +135,57 @@ async function fetchVoices() {
   return data.voices;
 }
 
-// Convert text to speech using ElevenLabs API
-async function readText(text, tabId) {
+// Generate audio from text using ElevenLabs API (returns base64 audio data)
+async function generateAudio(text) {
   if (!text || text.trim().length === 0) {
-    return { success: false, error: 'No text provided' };
+    throw new Error('No text provided');
   }
-
-  // Stop any current playback
-  stopReading();
 
   const settings = await getSettings();
   if (!settings.apiKey) {
-    notifyError(tabId, 'Please configure your ElevenLabs API key in the extension options.');
-    return { success: false, error: 'API key not configured' };
+    throw new Error('API key not configured');
   }
 
-  try {
-    // Notify content script that reading is starting
-    if (tabId) {
-      browser.tabs.sendMessage(tabId, { action: 'readingStarted' }).catch(() => {});
-    }
-
-    const response = await fetch(`${API_BASE}/text-to-speech/${settings.voiceId}?output_format=mp3_44100_128`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'xi-api-key': settings.apiKey
-      },
-      body: JSON.stringify({
-        text: text,
-        model_id: settings.modelId,
-        voice_settings: {
-          stability: settings.stability,
-          similarity_boost: settings.similarityBoost,
-          style: settings.style,
-          speed: settings.speed
-        }
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API error: ${response.status} - ${errorText}`);
-    }
-
-    // Get the full audio data as arrayBuffer and create blob with explicit MIME type
-    const arrayBuffer = await response.arrayBuffer();
-    const audioBlob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
-    const audioUrl = URL.createObjectURL(audioBlob);
-
-    console.log('Read11: Audio blob size:', audioBlob.size, 'bytes');
-
-    // Play the audio
-    await playAudio(audioUrl, tabId);
-
-    return { success: true };
-  } catch (error) {
-    console.error('Read11 error:', error);
-    notifyError(tabId, `Error: ${error.message}`);
-    return { success: false, error: error.message };
-  }
-}
-
-// Play audio blob
-function playAudio(audioUrl, tabId) {
-  return new Promise((resolve, reject) => {
-    currentAudio = new Audio();
-    isPlaying = true;
-
-    currentAudio.onended = () => {
-      isPlaying = false;
-      URL.revokeObjectURL(audioUrl);
-      if (tabId) {
-        browser.tabs.sendMessage(tabId, { action: 'readingEnded' }).catch(() => {});
+  const response = await fetch(`${API_BASE}/text-to-speech/${settings.voiceId}?output_format=mp3_44100_128`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'xi-api-key': settings.apiKey
+    },
+    body: JSON.stringify({
+      text: text,
+      model_id: settings.modelId,
+      voice_settings: {
+        stability: settings.stability,
+        similarity_boost: settings.similarityBoost,
+        style: settings.style,
+        speed: settings.speed
       }
-      resolve();
-    };
-
-    currentAudio.onerror = (e) => {
-      isPlaying = false;
-      URL.revokeObjectURL(audioUrl);
-      if (tabId) {
-        browser.tabs.sendMessage(tabId, { action: 'readingEnded' }).catch(() => {});
-      }
-      reject(new Error('Audio playback failed'));
-    };
-
-    // Wait for audio to be fully loaded before playing
-    currentAudio.oncanplaythrough = () => {
-      currentAudio.play().catch(reject);
-    };
-
-    // Preload the entire audio file
-    currentAudio.preload = 'auto';
-    currentAudio.src = audioUrl;
-    currentAudio.load();
+    })
   });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`API error: ${response.status} - ${errorText}`);
+  }
+
+  // Get the full audio data as arrayBuffer and convert to base64
+  const arrayBuffer = await response.arrayBuffer();
+  const base64 = arrayBufferToBase64(arrayBuffer);
+
+  console.log('Read11: Audio size:', arrayBuffer.byteLength, 'bytes');
+
+  return base64;
 }
 
-// Stop current playback
-function stopReading() {
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
-    currentAudio = null;
+// Convert ArrayBuffer to base64 string
+function arrayBufferToBase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i]);
   }
-  isPlaying = false;
-  return Promise.resolve({ success: true });
+  return btoa(binary);
 }
 
 // Test a voice with sample text
