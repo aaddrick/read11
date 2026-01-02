@@ -122,7 +122,7 @@ async function readText(text, tabId) {
       browser.tabs.sendMessage(tabId, { action: 'readingStarted' }).catch(() => {});
     }
 
-    const response = await fetch(`${API_BASE}/text-to-speech/${settings.voiceId}`, {
+    const response = await fetch(`${API_BASE}/text-to-speech/${settings.voiceId}?output_format=mp3_44100_128`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -145,8 +145,12 @@ async function readText(text, tabId) {
       throw new Error(`API error: ${response.status} - ${errorText}`);
     }
 
-    const audioBlob = await response.blob();
+    // Get the full audio data as arrayBuffer and create blob with explicit MIME type
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBlob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
     const audioUrl = URL.createObjectURL(audioBlob);
+
+    console.log('Read11: Audio blob size:', audioBlob.size, 'bytes');
 
     // Play the audio
     await playAudio(audioUrl, tabId);
