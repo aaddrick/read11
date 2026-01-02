@@ -101,6 +101,30 @@
   display: none;
 }
 
+/* Progress bar for downloads */
+.read11-progress {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.read11-progress-fill {
+  height: 100%;
+  background: white;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+/* Downloading state (blue) */
+#read11-status.read11-downloading .read11-status-content {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+}
+
 /* Notification Toast */
 .read11-notification {
   position: fixed;

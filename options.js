@@ -3,16 +3,18 @@
 const DEFAULT_SETTINGS = {
   apiKey: '',
   voiceId: 'EXAVITQu4vr4xnSDxMaL',
+  kokoroVoiceId: 'af_heart',
   modelId: 'eleven_multilingual_v2',
   stability: 0.5,
   similarityBoost: 0.75,
   style: 0.0,
   speed: 1.0,
   autoRead: false,
-  autoReadDelay: 1000
+  autoReadDelay: 1000,
+  ttsEngine: 'auto'
 };
 
-// Popular voices with natural conversational style
+// Popular ElevenLabs voices with natural conversational style
 const POPULAR_VOICES = [
   { voice_id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah (Recommended)', description: 'Soft, warm, conversational' },
   { voice_id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', description: 'Calm, professional' },
@@ -29,7 +31,27 @@ document.addEventListener('DOMContentLoaded', init);
 async function init() {
   await loadSettings();
   setupEventListeners();
+  setupTabs();
   await loadVoices();
+  await updateEngineStatus();
+}
+
+function setupTabs() {
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabContents = document.querySelectorAll('.tab-content');
+
+  tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      // Remove active from all
+      tabBtns.forEach(b => b.classList.remove('active'));
+      tabContents.forEach(c => c.classList.remove('active'));
+
+      // Add active to clicked
+      btn.classList.add('active');
+      const tabId = btn.dataset.tab;
+      document.getElementById(`tab-${tabId}`).classList.add('active');
+    });
+  });
 }
 
 async function loadSettings() {
@@ -51,6 +73,8 @@ async function loadSettings() {
   document.getElementById('speed').value = settings.speed;
   document.getElementById('auto-read').checked = settings.autoRead;
   document.getElementById('auto-read-delay').value = settings.autoReadDelay;
+  document.getElementById('tts-engine').value = settings.ttsEngine || 'auto';
+  document.getElementById('kokoro-voice-select').value = settings.kokoroVoiceId || 'af_heart';
 
   // Update display values
   updateSliderDisplays();
@@ -68,9 +92,14 @@ function setupEventListeners() {
 
   // Refresh voices
   document.getElementById('refresh-voices').addEventListener('click', loadVoices);
+  document.getElementById('refresh-kokoro-voices').addEventListener('click', loadKokoroVoices);
 
-  // Test voice
+  // Test voices
   document.getElementById('test-voice').addEventListener('click', testVoice);
+  document.getElementById('test-kokoro-voice').addEventListener('click', testKokoroVoice);
+
+  // Engine change
+  document.getElementById('tts-engine').addEventListener('change', updateEngineStatus);
 
   // Slider value updates
   const sliders = ['stability', 'similarity', 'style', 'speed', 'auto-read-delay'];
@@ -90,6 +119,31 @@ function updateSliderDisplays() {
     parseFloat(document.getElementById('speed').value).toFixed(2);
   document.getElementById('delay-value').textContent =
     document.getElementById('auto-read-delay').value;
+}
+
+async function updateEngineStatus() {
+  const engine = document.getElementById('tts-engine').value;
+  const apiKey = document.getElementById('api-key').value;
+  const statusEl = document.getElementById('engine-status');
+
+  let statusText = '';
+  if (engine === 'auto') {
+    if (apiKey) {
+      statusText = 'Currently using: ElevenLabs (API key detected)';
+    } else {
+      statusText = 'Currently using: Kokoro (no API key set)';
+    }
+  } else if (engine === 'elevenlabs') {
+    if (apiKey) {
+      statusText = 'ElevenLabs active';
+    } else {
+      statusText = '⚠️ No API key set - will fall back to Kokoro';
+    }
+  } else {
+    statusText = 'Kokoro active (offline mode)';
+  }
+
+  statusEl.textContent = statusText;
 }
 
 async function loadVoices() {
@@ -136,19 +190,49 @@ async function loadVoices() {
   }
 }
 
+async function loadKokoroVoices() {
+  const voiceSelect = document.getElementById('kokoro-voice-select');
+  const statusEl = document.getElementById('kokoro-model-status');
+
+  try {
+    statusEl.innerHTML = '<span class="status-indicator status-loading"></span><span class="status-label">Loading voices...</span>';
+
+    const voices = await browser.runtime.sendMessage({ action: 'getKokoroVoices' });
+
+    if (voices && voices.length > 0) {
+      voiceSelect.innerHTML = voices.map(v =>
+        `<option value="${v.voice_id}">${v.name} (${v.gender}, ${v.accent}, Grade ${v.grade})</option>`
+      ).join('');
+
+      statusEl.innerHTML = '<span class="status-indicator status-ready"></span><span class="status-label">Model ready</span>';
+    }
+
+    // Set current value
+    const result = await browser.storage.local.get('settings');
+    if (result.settings?.kokoroVoiceId) {
+      voiceSelect.value = result.settings.kokoroVoiceId;
+    }
+  } catch (error) {
+    console.error('Could not fetch Kokoro voices:', error);
+    statusEl.innerHTML = `<span class="status-indicator status-error"></span><span class="status-label">Error: ${error.message}</span>`;
+  }
+}
+
 async function saveSettings(e) {
   e.preventDefault();
 
   const settings = {
     apiKey: document.getElementById('api-key').value,
     voiceId: document.getElementById('voice-select').value,
+    kokoroVoiceId: document.getElementById('kokoro-voice-select').value,
     modelId: document.getElementById('model-select').value,
     stability: parseFloat(document.getElementById('stability').value),
     similarityBoost: parseFloat(document.getElementById('similarity').value),
     style: parseFloat(document.getElementById('style').value),
     speed: parseFloat(document.getElementById('speed').value),
     autoRead: document.getElementById('auto-read').checked,
-    autoReadDelay: parseInt(document.getElementById('auto-read-delay').value)
+    autoReadDelay: parseInt(document.getElementById('auto-read-delay').value),
+    ttsEngine: document.getElementById('tts-engine').value
   };
 
   await browser.storage.local.set({ settings });
@@ -160,6 +244,9 @@ async function saveSettings(e) {
   });
 
   showNotification('Settings saved successfully!', 'success');
+
+  // Update engine status display
+  await updateEngineStatus();
 
   // Reload voices in case API key changed
   if (settings.apiKey) {
@@ -175,6 +262,7 @@ async function resetDefaults() {
     const settings = { ...DEFAULT_SETTINGS, apiKey };
     await browser.storage.local.set({ settings });
     await loadSettings();
+    await updateEngineStatus();
     showNotification('Settings reset to defaults', 'info');
   }
 }
@@ -201,7 +289,7 @@ async function testVoice() {
   // Save current settings first
   await saveSettings(new Event('submit'));
 
-  showNotification('Testing voice...', 'info');
+  showNotification('Testing ElevenLabs voice...', 'info');
 
   try {
     await browser.runtime.sendMessage({
@@ -211,6 +299,42 @@ async function testVoice() {
     });
   } catch (error) {
     showNotification('Error testing voice: ' + error.message, 'error');
+  }
+}
+
+async function testKokoroVoice() {
+  const statusEl = document.getElementById('kokoro-test-status');
+  const btn = document.getElementById('test-kokoro-voice');
+
+  btn.disabled = true;
+  statusEl.textContent = 'Initializing...';
+  statusEl.className = 'status-text status-loading';
+
+  try {
+    // Save settings first so voice selection is applied
+    await saveSettings(new Event('submit'));
+
+    statusEl.textContent = 'Generating speech...';
+
+    await browser.runtime.sendMessage({
+      action: 'testKokoroVoice',
+      voiceId: document.getElementById('kokoro-voice-select').value,
+      text: 'Hello! This is a test of the Read11 screen reader with Kokoro offline voice.'
+    });
+
+    statusEl.textContent = 'Playing...';
+    statusEl.className = 'status-text status-success';
+
+    // Clear status after a delay
+    setTimeout(() => {
+      statusEl.textContent = '';
+    }, 3000);
+
+  } catch (error) {
+    statusEl.textContent = 'Error: ' + error.message;
+    statusEl.className = 'status-text status-error';
+  } finally {
+    btn.disabled = false;
   }
 }
 

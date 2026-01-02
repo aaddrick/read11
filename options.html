@@ -10,116 +10,216 @@
   <div class="options-container">
     <header class="options-header">
       <h1>Read11 Settings</h1>
-      <p class="subtitle">Configure your ElevenLabs screen reader</p>
+      <p class="subtitle">Configure your AI screen reader</p>
     </header>
 
     <div class="notification" id="notification"></div>
 
     <form id="settings-form">
-      <!-- API Key Section -->
+      <!-- TTS Engine Selection -->
       <section class="settings-section">
-        <h2>API Configuration</h2>
+        <h2>TTS Engine</h2>
         <div class="form-group">
-          <label for="api-key">ElevenLabs API Key</label>
-          <div class="input-with-button">
-            <input type="password" id="api-key" placeholder="Enter your API key">
-            <button type="button" id="toggle-api-key" class="btn-icon-only" title="Show/hide API key">
-              👁
-            </button>
-          </div>
-          <p class="help-text">
-            Get your API key from <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank">ElevenLabs Dashboard</a>
-          </p>
-        </div>
-      </section>
-
-      <!-- Voice Section -->
-      <section class="settings-section">
-        <h2>Voice Settings</h2>
-        <div class="form-group">
-          <label for="voice-select">Voice</label>
-          <div class="input-with-button">
-            <select id="voice-select">
-              <option value="">Loading voices...</option>
-            </select>
-            <button type="button" id="refresh-voices" class="btn-icon-only" title="Refresh voice list">
-              🔄
-            </button>
-          </div>
-        </div>
-
-        <div class="form-group">
-          <label for="model-select">Model</label>
-          <select id="model-select">
-            <option value="eleven_multilingual_v2">Multilingual v2 (Recommended)</option>
-            <option value="eleven_turbo_v2_5">Turbo v2.5 (Fastest)</option>
-            <option value="eleven_monolingual_v1">English v1</option>
+          <label for="tts-engine">Active Engine</label>
+          <select id="tts-engine">
+            <option value="auto">Auto (use ElevenLabs if API key set, otherwise Kokoro)</option>
+            <option value="elevenlabs">ElevenLabs (cloud, requires API key)</option>
+            <option value="kokoro">Kokoro (offline, free, ~86MB download)</option>
           </select>
-        </div>
-
-        <div class="form-group">
-          <button type="button" id="test-voice" class="btn btn-secondary">
-            Test Voice
-          </button>
+          <p class="help-text" id="engine-status"></p>
         </div>
       </section>
 
-      <!-- Voice Tuning Section -->
-      <section class="settings-section">
-        <h2>Voice Tuning</h2>
+      <!-- Tab Navigation -->
+      <div class="tab-navigation">
+        <button type="button" class="tab-btn active" data-tab="elevenlabs">ElevenLabs</button>
+        <button type="button" class="tab-btn" data-tab="kokoro">Kokoro (Offline)</button>
+        <button type="button" class="tab-btn" data-tab="general">General</button>
+      </div>
 
-        <div class="form-group">
-          <label for="stability">
-            Stability: <span id="stability-value">0.50</span>
-          </label>
-          <input type="range" id="stability" min="0" max="1" step="0.01" value="0.5">
-          <p class="help-text">Higher = more consistent, Lower = more expressive</p>
-        </div>
+      <!-- ElevenLabs Tab -->
+      <div class="tab-content active" id="tab-elevenlabs">
+        <section class="settings-section">
+          <h2>API Configuration</h2>
+          <div class="form-group">
+            <label for="api-key">ElevenLabs API Key</label>
+            <div class="input-with-button">
+              <input type="password" id="api-key" placeholder="Enter your API key">
+              <button type="button" id="toggle-api-key" class="btn-icon-only" title="Show/hide API key">
+                👁
+              </button>
+            </div>
+            <p class="help-text">
+              Get your API key from <a href="https://elevenlabs.io/app/settings/api-keys" target="_blank">ElevenLabs Dashboard</a>
+            </p>
+          </div>
+        </section>
 
-        <div class="form-group">
-          <label for="similarity">
-            Clarity + Similarity: <span id="similarity-value">0.75</span>
-          </label>
-          <input type="range" id="similarity" min="0" max="1" step="0.01" value="0.75">
-          <p class="help-text">Higher = clearer and more similar to original voice</p>
-        </div>
+        <section class="settings-section">
+          <h2>Voice Settings</h2>
+          <div class="form-group">
+            <label for="voice-select">Voice</label>
+            <div class="input-with-button">
+              <select id="voice-select">
+                <option value="">Loading voices...</option>
+              </select>
+              <button type="button" id="refresh-voices" class="btn-icon-only" title="Refresh voice list">
+                🔄
+              </button>
+            </div>
+          </div>
 
-        <div class="form-group">
-          <label for="style">
-            Style: <span id="style-value">0.00</span>
-          </label>
-          <input type="range" id="style" min="0" max="1" step="0.01" value="0">
-          <p class="help-text">Higher = more expressive (uses more credits)</p>
-        </div>
+          <div class="form-group">
+            <label for="model-select">Model</label>
+            <select id="model-select">
+              <option value="eleven_multilingual_v2">Multilingual v2 (Recommended)</option>
+              <option value="eleven_turbo_v2_5">Turbo v2.5 (Fastest)</option>
+              <option value="eleven_monolingual_v1">English v1</option>
+            </select>
+          </div>
 
-        <div class="form-group">
-          <label for="speed">
-            Speed: <span id="speed-value">1.00</span>x
-          </label>
-          <input type="range" id="speed" min="0.7" max="1.2" step="0.05" value="1">
-          <p class="help-text">Range: 0.7x (slower) to 1.2x (faster)</p>
-        </div>
-      </section>
+          <div class="form-group">
+            <button type="button" id="test-voice" class="btn btn-secondary">
+              Test ElevenLabs Voice
+            </button>
+          </div>
+        </section>
 
-      <!-- Auto-Read Section -->
-      <section class="settings-section">
-        <h2>Auto-Read Settings</h2>
+        <section class="settings-section">
+          <h2>Voice Tuning</h2>
 
-        <div class="form-group">
-          <label class="toggle">
-            <input type="checkbox" id="auto-read">
-            <span class="toggle-slider"></span>
-            <span class="toggle-label">Enable auto-read on page load</span>
-          </label>
-        </div>
+          <div class="form-group">
+            <label for="stability">
+              Stability: <span id="stability-value">0.50</span>
+            </label>
+            <input type="range" id="stability" min="0" max="1" step="0.01" value="0.5">
+            <p class="help-text">Higher = more consistent, Lower = more expressive</p>
+          </div>
 
-        <div class="form-group">
-          <label for="auto-read-delay">
-            Delay before reading: <span id="delay-value">1000</span>ms
-          </label>
-          <input type="range" id="auto-read-delay" min="0" max="5000" step="100" value="1000">
-        </div>
-      </section>
+          <div class="form-group">
+            <label for="similarity">
+              Clarity + Similarity: <span id="similarity-value">0.75</span>
+            </label>
+            <input type="range" id="similarity" min="0" max="1" step="0.01" value="0.75">
+            <p class="help-text">Higher = clearer and more similar to original voice</p>
+          </div>
+
+          <div class="form-group">
+            <label for="style">
+              Style: <span id="style-value">0.00</span>
+            </label>
+            <input type="range" id="style" min="0" max="1" step="0.01" value="0">
+            <p class="help-text">Higher = more expressive (uses more credits)</p>
+          </div>
+
+          <div class="form-group">
+            <label for="speed">
+              Speed: <span id="speed-value">1.00</span>x
+            </label>
+            <input type="range" id="speed" min="0.7" max="1.2" step="0.05" value="1">
+            <p class="help-text">Range: 0.7x (slower) to 1.2x (faster)</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- Kokoro Tab -->
+      <div class="tab-content" id="tab-kokoro">
+        <section class="settings-section">
+          <h2>About Kokoro</h2>
+          <div class="info-box">
+            <p><strong>Kokoro</strong> is a free, offline text-to-speech engine that runs entirely in your browser.</p>
+            <ul>
+              <li>No API key required</li>
+              <li>Works offline after first download</li>
+              <li>~86MB model download on first use</li>
+              <li>Apache 2.0 licensed</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h2>Voice Selection</h2>
+          <div class="form-group">
+            <label for="kokoro-voice-select">Voice</label>
+            <div class="input-with-button">
+              <select id="kokoro-voice-select">
+                <option value="af_heart">Heart (Female, American, Grade A)</option>
+                <option value="af_bella">Bella (Female, American, Grade A-)</option>
+                <option value="af_sarah">Sarah (Female, American, Grade B-)</option>
+                <option value="af_nicole">Nicole (Female, American, Grade B-)</option>
+                <option value="am_michael">Michael (Male, American, Grade C+)</option>
+                <option value="am_fenrir">Fenrir (Male, American, Grade C+)</option>
+                <option value="am_adam">Adam (Male, American, Grade C)</option>
+                <option value="bf_emma">Emma (Female, British, Grade B-)</option>
+                <option value="bf_isabella">Isabella (Female, British, Grade C)</option>
+                <option value="bm_george">George (Male, British, Grade C)</option>
+              </select>
+              <button type="button" id="refresh-kokoro-voices" class="btn-icon-only" title="Refresh voice list">
+                🔄
+              </button>
+            </div>
+            <p class="help-text">Higher grades indicate better voice quality</p>
+          </div>
+
+          <div class="form-group">
+            <button type="button" id="test-kokoro-voice" class="btn btn-secondary">
+              Test Kokoro Voice
+            </button>
+            <span id="kokoro-test-status" class="status-text"></span>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h2>Model Status</h2>
+          <div class="form-group">
+            <div id="kokoro-model-status" class="model-status">
+              <span class="status-indicator status-unknown"></span>
+              <span class="status-label">Checking model status...</span>
+            </div>
+            <p class="help-text">The model is cached in your browser after first download</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- General Tab -->
+      <div class="tab-content" id="tab-general">
+        <section class="settings-section">
+          <h2>Auto-Read Settings</h2>
+
+          <div class="form-group">
+            <label class="toggle">
+              <input type="checkbox" id="auto-read">
+              <span class="toggle-slider"></span>
+              <span class="toggle-label">Enable auto-read on page load</span>
+            </label>
+          </div>
+
+          <div class="form-group">
+            <label for="auto-read-delay">
+              Delay before reading: <span id="delay-value">1000</span>ms
+            </label>
+            <input type="range" id="auto-read-delay" min="0" max="5000" step="100" value="1000">
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h2>Keyboard Shortcuts</h2>
+          <div class="shortcuts-list">
+            <div class="shortcut-item">
+              <span class="shortcut-keys">Alt + R</span>
+              <span class="shortcut-desc">Read selected text</span>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-keys">Alt + X</span>
+              <span class="shortcut-desc">Stop reading</span>
+            </div>
+            <div class="shortcut-item">
+              <span class="shortcut-keys">Alt + A</span>
+              <span class="shortcut-desc">Toggle auto-read</span>
+            </div>
+          </div>
+        </section>
+      </div>
 
       <!-- Actions -->
       <div class="form-actions">

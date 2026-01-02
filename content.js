@@ -18,6 +18,10 @@
   let nextPlayTime = 0;
   let isStreamingPlayback = false;
 
+  // Engine state
+  let currentEngine = 'auto';
+  let isDownloading = false;
+
   // Initialize
   init();
 
@@ -54,7 +58,7 @@
         setWidgetState('loading');
         break;
       case 'playAudio':
-        playAudioFromBase64(message.audioData);
+        playAudioFromBase64(message.audioData, message.mimeType);
         break;
       case 'playAudioChunk':
         handleAudioChunk(message.audioData, message.isFirst, message.isFinal);
@@ -81,6 +85,13 @@
       case 'readPageContent':
         readPageContent();
         break;
+      case 'engineSelected':
+        currentEngine = message.engine;
+        break;
+      case 'updateLoadingStatus':
+        isDownloading = message.isDownloading || false;
+        setWidgetState('loading', message.message, message.progress);
+        break;
     }
   }
 
@@ -95,8 +106,9 @@
   }
 
   // Play audio from base64 data using Web Audio API
-  async function playAudioFromBase64(base64Data) {
+  async function playAudioFromBase64(base64Data, mimeType = 'audio/mpeg') {
     try {
+      console.log('Read11: Playing audio, mimeType:', mimeType);
       // Create or resume audio context
       if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -296,6 +308,9 @@
       <div class="read11-status-content">
         <span class="read11-icon">🔊</span>
         <span class="read11-text">Reading...</span>
+        <div class="read11-progress" style="display: none;">
+          <div class="read11-progress-fill"></div>
+        </div>
         <div class="read11-controls">
           <button class="read11-pause" title="Pause/Resume">⏸</button>
           <button class="read11-stop" title="Stop (Alt+X)">✕</button>
@@ -316,31 +331,53 @@
     });
   }
 
-  function setWidgetState(state) {
-    // States: 'hidden', 'loading', 'playing'
+  function setWidgetState(state, message = null, progress = null) {
+    // States: 'hidden', 'loading', 'downloading', 'playing'
     if (!statusIndicator) return;
 
     const icon = statusIndicator.querySelector('.read11-icon');
     const text = statusIndicator.querySelector('.read11-text');
+    const progressBar = statusIndicator.querySelector('.read11-progress');
 
     switch (state) {
       case 'loading':
         statusIndicator.classList.remove('read11-hidden');
         statusIndicator.classList.add('read11-visible', 'read11-loading');
-        statusIndicator.classList.remove('read11-playing');
-        icon.textContent = '⏳';
-        text.textContent = 'Loading...';
+        statusIndicator.classList.remove('read11-playing', 'read11-downloading');
+        icon.textContent = isDownloading ? '📥' : '⏳';
+
+        if (message) {
+          text.textContent = message;
+        } else if (isDownloading) {
+          text.textContent = 'Downloading model...';
+        } else {
+          text.textContent = 'Loading...';
+        }
+
+        // Show/update progress bar if downloading
+        if (progressBar) {
+          if (progress !== null && progress !== undefined) {
+            progressBar.style.display = 'block';
+            progressBar.querySelector('.read11-progress-fill').style.width = `${progress}%`;
+          } else {
+            progressBar.style.display = 'none';
+          }
+        }
         break;
       case 'playing':
-        statusIndicator.classList.remove('read11-hidden', 'read11-loading');
+        statusIndicator.classList.remove('read11-hidden', 'read11-loading', 'read11-downloading');
         statusIndicator.classList.add('read11-visible', 'read11-playing');
         icon.textContent = '🔊';
-        text.textContent = 'Reading...';
+        // Show engine indicator
+        const engineLabel = currentEngine === 'kokoro' ? ' (Kokoro)' : currentEngine === 'elevenlabs' ? '' : '';
+        text.textContent = 'Reading...' + engineLabel;
+        if (progressBar) progressBar.style.display = 'none';
         break;
       case 'hidden':
       default:
-        statusIndicator.classList.remove('read11-visible', 'read11-loading', 'read11-playing');
+        statusIndicator.classList.remove('read11-visible', 'read11-loading', 'read11-playing', 'read11-downloading');
         statusIndicator.classList.add('read11-hidden');
+        if (progressBar) progressBar.style.display = 'none';
         break;
     }
   }

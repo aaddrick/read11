@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
-  "name": "Read11 - ElevenLabs Screen Reader",
-  "version": "1.0.0",
-  "description": "A screen reader powered by ElevenLabs text-to-speech for focused learning",
+  "name": "Read11 - AI Screen Reader",
+  "version": "1.1.0",
+  "description": "A screen reader with ElevenLabs and offline Kokoro TTS for focused learning",
   "author": "Aaddrick Williams",
   "homepage_url": "https://github.com/aaddrick/read11",
   "icons": {
@@ -57,6 +57,9 @@
       "description": "Toggle auto-read mode"
     }
   },
+  "web_accessible_resources": [
+    "kokoro-worker.html"
+  ],
   "browser_specific_settings": {
     "gecko": {
       "id": "read11@aaddrick.com",
