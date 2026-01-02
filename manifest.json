@@ -1,0 +1,66 @@
+{
+  "manifest_version": 2,
+  "name": "Read11 - ElevenLabs Screen Reader",
+  "version": "1.0.0",
+  "description": "A screen reader powered by ElevenLabs text-to-speech for focused learning",
+  "author": "Aaddrick Williams",
+  "homepage_url": "https://github.com/aaddrick/read11",
+  "icons": {
+    "48": "icons/icon-48.svg",
+    "96": "icons/icon-96.svg"
+  },
+  "permissions": [
+    "activeTab",
+    "storage",
+    "contextMenus",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles/content.css"]
+    }
+  ],
+  "browser_action": {
+    "default_icon": {
+      "48": "icons/icon-48.svg"
+    },
+    "default_title": "Read11",
+    "default_popup": "popup.html"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "commands": {
+    "read-selection": {
+      "suggested_key": {
+        "default": "Alt+R"
+      },
+      "description": "Read selected text"
+    },
+    "stop-reading": {
+      "suggested_key": {
+        "default": "Alt+S"
+      },
+      "description": "Stop reading"
+    },
+    "toggle-auto-read": {
+      "suggested_key": {
+        "default": "Alt+A"
+      },
+      "description": "Toggle auto-read mode"
+    }
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "read11@aaddrick.com",
+      "strict_min_version": "109.0"
+    }
+  }
+}

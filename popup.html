@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Read11</title>
+  <link rel="stylesheet" href="styles/popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <header class="popup-header">
+      <h1>Read11</h1>
+      <p class="subtitle">ElevenLabs Screen Reader</p>
+    </header>
+
+    <div class="status-bar" id="status-bar">
+      <span class="status-icon" id="status-icon"></span>
+      <span class="status-text" id="status-text">Ready</span>
+    </div>
+
+    <div class="controls">
+      <button class="btn btn-primary" id="read-page">
+        <span class="btn-icon">📖</span>
+        Read Page
+      </button>
+      <button class="btn btn-secondary" id="stop-reading" disabled>
+        <span class="btn-icon">⏹</span>
+        Stop
+      </button>
+    </div>
+
+    <div class="toggle-section">
+      <label class="toggle">
+        <input type="checkbox" id="auto-read-toggle">
+        <span class="toggle-slider"></span>
+        <span class="toggle-label">Auto-read pages</span>
+      </label>
+    </div>
+
+    <div class="shortcuts">
+      <h3>Keyboard Shortcuts</h3>
+      <div class="shortcut">
+        <kbd>Alt</kbd> + <kbd>R</kbd>
+        <span>Read selection</span>
+      </div>
+      <div class="shortcut">
+        <kbd>Alt</kbd> + <kbd>S</kbd>
+        <span>Stop reading</span>
+      </div>
+      <div class="shortcut">
+        <kbd>Alt</kbd> + <kbd>A</kbd>
+        <span>Toggle auto-read</span>
+      </div>
+    </div>
+
+    <footer class="popup-footer">
+      <a href="#" id="open-options">Settings</a>
+      <span class="separator">|</span>
+      <span class="version">v1.0.0</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
