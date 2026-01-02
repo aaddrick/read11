@@ -338,6 +338,12 @@ input[type="range"]::-moz-range-thumb {
   margin-bottom: 4px;
 }
 
+.info-box-success {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #047857;
+}
+
 /* Model Status */
 .model-status {
   display: flex;

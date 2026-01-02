@@ -14,7 +14,8 @@ const DEFAULT_SETTINGS = {
   speed: 1.0,
   autoRead: false,
   autoReadDelay: 1000,
-  ttsEngine: 'auto' // 'auto', 'elevenlabs', 'kokoro'
+  ttsEngine: 'auto', // 'auto', 'elevenlabs', 'kokoro', 'browser'
+  browserVoiceName: '' // Browser speechSynthesis voice name
 };
 
 // State
@@ -588,8 +589,8 @@ async function getTTSEngine() {
 
   if (settings.ttsEngine === 'elevenlabs') {
     if (!settings.apiKey) {
-      console.log('Read11: ElevenLabs selected but no API key, falling back to Kokoro');
-      return 'kokoro';
+      console.log('Read11: ElevenLabs selected but no API key, falling back to browser');
+      return 'browser';
     }
     return 'elevenlabs';
   }
@@ -598,12 +599,17 @@ async function getTTSEngine() {
     return 'kokoro';
   }
 
-  // Auto mode: use ElevenLabs if API key exists, otherwise Kokoro
+  if (settings.ttsEngine === 'browser') {
+    return 'browser';
+  }
+
+  // Auto mode: use ElevenLabs if API key exists, otherwise browser (fast) instead of Kokoro (slow)
   if (settings.apiKey) {
     return 'elevenlabs';
   }
 
-  return 'kokoro';
+  // Default to browser TTS - it's instant and always works
+  return 'browser';
 }
 
 // Unified generate function that routes to appropriate engine
@@ -619,30 +625,49 @@ async function generateAudio_Unified(text, tabId) {
     }).catch(() => {});
   }
 
+  if (engine === 'browser') {
+    return generateBrowserTTS(text, tabId);
+  }
+
   if (engine === 'kokoro') {
     return generateAudioKokoro(text, tabId);
-  } else {
-    // Try ElevenLabs, fall back to Kokoro on error
-    try {
-      return await generateAudioStreaming(text, tabId);
-    } catch (error) {
-      console.log('Read11: ElevenLabs failed, falling back to Kokoro:', error.message);
+  }
 
-      // Notify user of fallback
-      if (tabId) {
-        browser.tabs.sendMessage(tabId, {
-          action: 'engineSelected',
-          engine: 'kokoro'
-        }).catch(() => {});
-        browser.tabs.sendMessage(tabId, {
-          action: 'updateLoadingStatus',
-          message: 'ElevenLabs unavailable, using Kokoro...',
-          isDownloading: false
-        }).catch(() => {});
-      }
+  // ElevenLabs - with fallback to browser TTS on error
+  try {
+    return await generateAudioStreaming(text, tabId);
+  } catch (error) {
+    console.log('Read11: ElevenLabs failed, falling back to browser TTS:', error.message);
 
-      return generateAudioKokoro(text, tabId);
+    // Notify user of fallback
+    if (tabId) {
+      browser.tabs.sendMessage(tabId, {
+        action: 'engineSelected',
+        engine: 'browser'
+      }).catch(() => {});
     }
+
+    return generateBrowserTTS(text, tabId);
+  }
+}
+
+// Generate using browser's built-in speechSynthesis (runs in content script)
+async function generateBrowserTTS(text, tabId) {
+  if (!text || text.trim().length === 0) {
+    throw new Error('No text provided');
+  }
+
+  const settings = await getSettings();
+
+  console.log('Read11: Using browser speechSynthesis');
+
+  if (tabId) {
+    browser.tabs.sendMessage(tabId, {
+      action: 'speakWithBrowser',
+      text: text,
+      voiceName: settings.browserVoiceName || '',
+      rate: settings.speed || 1.0
+    }).catch(() => {});
   }
 }
 

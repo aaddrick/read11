@@ -33,6 +33,7 @@ async function init() {
   setupEventListeners();
   setupTabs();
   await loadVoices();
+  loadBrowserVoices();
   await updateEngineStatus();
 }
 
@@ -75,6 +76,7 @@ async function loadSettings() {
   document.getElementById('auto-read-delay').value = settings.autoReadDelay;
   document.getElementById('tts-engine').value = settings.ttsEngine || 'auto';
   document.getElementById('kokoro-voice-select').value = settings.kokoroVoiceId || 'af_heart';
+  document.getElementById('browser-voice-select').value = settings.browserVoiceName || '';
 
   // Update display values
   updateSliderDisplays();
@@ -97,6 +99,7 @@ function setupEventListeners() {
   // Test voices
   document.getElementById('test-voice').addEventListener('click', testVoice);
   document.getElementById('test-kokoro-voice').addEventListener('click', testKokoroVoice);
+  document.getElementById('test-browser-voice').addEventListener('click', testBrowserVoice);
 
   // Engine change
   document.getElementById('tts-engine').addEventListener('change', updateEngineStatus);
@@ -131,16 +134,18 @@ async function updateEngineStatus() {
     if (apiKey) {
       statusText = 'Currently using: ElevenLabs (API key detected)';
     } else {
-      statusText = 'Currently using: Kokoro (no API key set)';
+      statusText = 'Currently using: Browser TTS (instant, free)';
     }
   } else if (engine === 'elevenlabs') {
     if (apiKey) {
       statusText = 'ElevenLabs active';
     } else {
-      statusText = '⚠️ No API key set - will fall back to Kokoro';
+      statusText = '⚠️ No API key set - will fall back to Browser TTS';
     }
-  } else {
-    statusText = 'Kokoro active (offline mode)';
+  } else if (engine === 'browser') {
+    statusText = 'Browser TTS active (instant, free)';
+  } else if (engine === 'kokoro') {
+    statusText = '⚠️ Kokoro active - slow without WebGPU (~60s for 200 chars)';
   }
 
   statusEl.textContent = statusText;
@@ -225,6 +230,7 @@ async function saveSettings(e) {
     apiKey: document.getElementById('api-key').value,
     voiceId: document.getElementById('voice-select').value,
     kokoroVoiceId: document.getElementById('kokoro-voice-select').value,
+    browserVoiceName: document.getElementById('browser-voice-select').value,
     modelId: document.getElementById('model-select').value,
     stability: parseFloat(document.getElementById('stability').value),
     similarityBoost: parseFloat(document.getElementById('similarity').value),
@@ -336,6 +342,58 @@ async function testKokoroVoice() {
   } finally {
     btn.disabled = false;
   }
+}
+
+function loadBrowserVoices() {
+  const voiceSelect = document.getElementById('browser-voice-select');
+
+  const populateVoices = () => {
+    const voices = speechSynthesis.getVoices();
+    voiceSelect.innerHTML = '<option value="">System Default</option>';
+
+    voices.forEach(voice => {
+      const option = document.createElement('option');
+      option.value = voice.name;
+      option.textContent = `${voice.name} (${voice.lang})`;
+      voiceSelect.appendChild(option);
+    });
+
+    // Restore saved value
+    browser.storage.local.get('settings').then(result => {
+      if (result.settings?.browserVoiceName) {
+        voiceSelect.value = result.settings.browserVoiceName;
+      }
+    });
+  };
+
+  // Voices may load async
+  if (speechSynthesis.getVoices().length > 0) {
+    populateVoices();
+  }
+  speechSynthesis.onvoiceschanged = populateVoices;
+}
+
+function testBrowserVoice() {
+  const voiceName = document.getElementById('browser-voice-select').value;
+  const rate = parseFloat(document.getElementById('speed').value) || 1.0;
+
+  speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(
+    'Hello! This is a test of the browser text to speech with your selected voice.'
+  );
+  utterance.rate = rate;
+
+  if (voiceName) {
+    const voices = speechSynthesis.getVoices();
+    const voice = voices.find(v => v.name === voiceName);
+    if (voice) {
+      utterance.voice = voice;
+    }
+  }
+
+  speechSynthesis.speak(utterance);
+  showNotification('Testing browser voice...', 'info');
 }
 
 function showNotification(message, type = 'info') {

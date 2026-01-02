@@ -22,9 +22,10 @@
         <div class="form-group">
           <label for="tts-engine">Active Engine</label>
           <select id="tts-engine">
-            <option value="auto">Auto (use ElevenLabs if API key set, otherwise Kokoro)</option>
-            <option value="elevenlabs">ElevenLabs (cloud, requires API key)</option>
-            <option value="kokoro">Kokoro (offline, free, ~86MB download)</option>
+            <option value="auto">Auto (ElevenLabs if API key, otherwise Browser TTS)</option>
+            <option value="elevenlabs">ElevenLabs (best quality, requires API key)</option>
+            <option value="browser">Browser TTS (instant, free, built-in)</option>
+            <option value="kokoro">Kokoro (offline AI, slow on WASM)</option>
           </select>
           <p class="help-text" id="engine-status"></p>
         </div>
@@ -33,7 +34,8 @@
       <!-- Tab Navigation -->
       <div class="tab-navigation">
         <button type="button" class="tab-btn active" data-tab="elevenlabs">ElevenLabs</button>
-        <button type="button" class="tab-btn" data-tab="kokoro">Kokoro (Offline)</button>
+        <button type="button" class="tab-btn" data-tab="browser">Browser TTS</button>
+        <button type="button" class="tab-btn" data-tab="kokoro">Kokoro</button>
         <button type="button" class="tab-btn" data-tab="general">General</button>
       </div>
 
@@ -118,6 +120,39 @@
             </label>
             <input type="range" id="speed" min="0.7" max="1.2" step="0.05" value="1">
             <p class="help-text">Range: 0.7x (slower) to 1.2x (faster)</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- Browser TTS Tab -->
+      <div class="tab-content" id="tab-browser">
+        <section class="settings-section">
+          <h2>About Browser TTS</h2>
+          <div class="info-box info-box-success">
+            <p><strong>Browser TTS</strong> uses your browser's built-in speech synthesis.</p>
+            <ul>
+              <li>Instant - no loading or generation delay</li>
+              <li>Free - no API key needed</li>
+              <li>Works offline</li>
+              <li>Voice quality depends on your OS</li>
+            </ul>
+          </div>
+        </section>
+
+        <section class="settings-section">
+          <h2>Voice Selection</h2>
+          <div class="form-group">
+            <label for="browser-voice-select">Voice</label>
+            <select id="browser-voice-select">
+              <option value="">System Default</option>
+            </select>
+            <p class="help-text">Available voices depend on your operating system</p>
+          </div>
+
+          <div class="form-group">
+            <button type="button" id="test-browser-voice" class="btn btn-secondary">
+              Test Browser Voice
+            </button>
           </div>
         </section>
       </div>

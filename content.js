@@ -91,6 +91,9 @@
       case 'engineSelected':
         currentEngine = message.engine;
         break;
+      case 'speakWithBrowser':
+        speakWithBrowser(message.text, message.voiceName, message.rate);
+        break;
       case 'updateLoadingStatus':
         isDownloading = message.isDownloading || false;
         setWidgetState('loading', message.message, message.progress, message.stage);
@@ -285,6 +288,61 @@
     };
     checkQueue();
   }
+
+  // Browser built-in speech synthesis
+  let browserUtterance = null;
+
+  function speakWithBrowser(text, voiceName, rate) {
+    // Stop any current speech
+    speechSynthesis.cancel();
+    stopAudio();
+
+    console.log('Read11: Using browser speechSynthesis');
+
+    browserUtterance = new SpeechSynthesisUtterance(text);
+    browserUtterance.rate = rate || 1.0;
+
+    // Try to find the requested voice
+    if (voiceName) {
+      const voices = speechSynthesis.getVoices();
+      const voice = voices.find(v => v.name === voiceName);
+      if (voice) {
+        browserUtterance.voice = voice;
+      }
+    }
+
+    browserUtterance.onstart = () => {
+      console.log('Read11: Browser TTS started');
+      setReadingState(true);
+    };
+
+    browserUtterance.onend = () => {
+      console.log('Read11: Browser TTS ended');
+      setReadingState(false);
+      browserUtterance = null;
+    };
+
+    browserUtterance.onerror = (e) => {
+      console.error('Read11: Browser TTS error:', e.error);
+      showNotification('Speech error: ' + e.error, 'error');
+      setReadingState(false);
+      browserUtterance = null;
+    };
+
+    speechSynthesis.speak(browserUtterance);
+  }
+
+  // Update stopAudio to also stop browser speech
+  const originalStopAudio = stopAudio;
+  stopAudio = function() {
+    // Stop browser speech
+    if (browserUtterance) {
+      speechSynthesis.cancel();
+      browserUtterance = null;
+    }
+    // Call original
+    originalStopAudio.call(this);
+  };
 
   function handleVisibilityChange() {
     if (document.visibilityState === 'visible' && autoReadEnabled) {
