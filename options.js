@@ -36,6 +36,12 @@ async function loadSettings() {
   const result = await browser.storage.local.get('settings');
   const settings = { ...DEFAULT_SETTINGS, ...result.settings };
 
+  // Clamp values to valid ranges
+  settings.speed = Math.max(0.7, Math.min(1.2, settings.speed));
+  settings.stability = Math.max(0, Math.min(1, settings.stability));
+  settings.similarityBoost = Math.max(0, Math.min(1, settings.similarityBoost));
+  settings.style = Math.max(0, Math.min(1, settings.style));
+
   // Populate form
   document.getElementById('api-key').value = settings.apiKey;
   document.getElementById('model-select').value = settings.modelId;

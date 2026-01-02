@@ -284,20 +284,21 @@ async function testVoice(voiceId, text = 'Hello, this is a test of the Read11 sc
   const settings = await getSettings();
   const originalVoiceId = settings.voiceId;
 
-  // Temporarily use the test voice
+  // Temporarily use the test voice (keeps all other settings like speed, stability, etc.)
   settings.voiceId = voiceId;
   await browser.storage.local.set({ settings });
 
   try {
-    const audioData = await generateAudio(text);
-    // Send to active tab for playback
+    // Get active tab and show loading state
     const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-    if (tabs[0] && audioData) {
-      browser.tabs.sendMessage(tabs[0].id, {
-        action: 'playAudio',
-        audioData: audioData
-      });
+    const tabId = tabs[0]?.id;
+
+    if (tabId) {
+      browser.tabs.sendMessage(tabId, { action: 'startLoading' }).catch(() => {});
     }
+
+    // Use streaming function which uses current settings
+    await generateAudioStreaming(text, tabId);
   } finally {
     // Restore original voice
     settings.voiceId = originalVoiceId;
@@ -305,10 +306,20 @@ async function testVoice(voiceId, text = 'Hello, this is a test of the Read11 sc
   }
 }
 
-// Get current settings
+// Get current settings with validation
 async function getSettings() {
   const result = await browser.storage.local.get('settings');
-  return { ...DEFAULT_SETTINGS, ...result.settings };
+  const settings = { ...DEFAULT_SETTINGS, ...result.settings };
+
+  // Clamp speed to valid range (ElevenLabs requires 0.7-1.2)
+  settings.speed = Math.max(0.7, Math.min(1.2, settings.speed));
+
+  // Clamp other values to valid ranges
+  settings.stability = Math.max(0, Math.min(1, settings.stability));
+  settings.similarityBoost = Math.max(0, Math.min(1, settings.similarityBoost));
+  settings.style = Math.max(0, Math.min(1, settings.style));
+
+  return settings;
 }
 
 // Get auto-read state
