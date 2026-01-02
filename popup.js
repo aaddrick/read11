@@ -50,7 +50,7 @@ function setupEventListeners() {
   // Open options
   document.getElementById('open-options').addEventListener('click', (e) => {
     e.preventDefault();
-    browser.runtime.openOptionsPage();
+    browser.tabs.create({ url: browser.runtime.getURL('options.html') });
   });
 }
 
