@@ -585,7 +585,27 @@ async function generateAudio_Unified(text, tabId) {
   if (engine === 'kokoro') {
     return generateAudioKokoro(text, tabId);
   } else {
-    return generateAudioStreaming(text, tabId);
+    // Try ElevenLabs, fall back to Kokoro on error
+    try {
+      return await generateAudioStreaming(text, tabId);
+    } catch (error) {
+      console.log('Read11: ElevenLabs failed, falling back to Kokoro:', error.message);
+
+      // Notify user of fallback
+      if (tabId) {
+        browser.tabs.sendMessage(tabId, {
+          action: 'engineSelected',
+          engine: 'kokoro'
+        }).catch(() => {});
+        browser.tabs.sendMessage(tabId, {
+          action: 'updateLoadingStatus',
+          message: 'ElevenLabs unavailable, using Kokoro...',
+          isDownloading: false
+        }).catch(() => {});
+      }
+
+      return generateAudioKokoro(text, tabId);
+    }
   }
 }
 
