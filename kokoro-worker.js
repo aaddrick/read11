@@ -57,7 +57,7 @@ async function initTTS() {
 
     // Check for WebGPU support (much faster than WASM)
     let device = 'wasm';
-    let dtype = 'q4'; // Use q4 for WASM - fastest option
+    let dtype = 'q8'; // q8 often faster than q4 (less dequantization overhead)
 
     if (navigator.gpu) {
       try {
@@ -68,10 +68,10 @@ async function initTTS() {
           console.log('Read11: Using WebGPU backend (fast)');
         }
       } catch (e) {
-        console.log('Read11: WebGPU not available, using WASM with q4');
+        console.log('Read11: WebGPU not available, using WASM');
       }
     } else {
-      console.log('Read11: WebGPU not supported, using WASM with q4 (smaller/faster)');
+      console.log('Read11: WebGPU not supported, using WASM (WARNING: very slow, ~0.3 sec per character)');
     }
 
     statusEl.textContent = `Loading Kokoro (${device})...`;

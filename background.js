@@ -509,9 +509,9 @@ async function generateAudioKokoro(text, tabId) {
     throw new Error('No text provided');
   }
 
-  // Limit text length for Kokoro (WASM is slow for long text)
-  // ~500 chars ≈ 30 seconds of audio, reasonable for WASM
-  const maxLength = 500;
+  // Limit text length for Kokoro (WASM is VERY slow - ~0.3s per char)
+  // 200 chars ≈ 60 seconds generation time on WASM
+  const maxLength = 200;
   if (text.length > maxLength) {
     // Try to cut at sentence boundary
     let cutText = text.substring(0, maxLength);
@@ -531,10 +531,20 @@ async function generateAudioKokoro(text, tabId) {
     if (tabId) {
       browser.tabs.sendMessage(tabId, {
         action: 'updateLoadingStatus',
-        message: 'Text trimmed for offline mode...',
+        message: 'Text trimmed (offline mode limit)...',
         isDownloading: false
       }).catch(() => {});
     }
+  }
+
+  // Estimate generation time for user feedback
+  const estimatedSeconds = Math.round(text.length * 0.3);
+  if (tabId) {
+    browser.tabs.sendMessage(tabId, {
+      action: 'updateLoadingStatus',
+      message: `Generating (~${estimatedSeconds}s for ${text.length} chars)...`,
+      stage: 'generating'
+    }).catch(() => {});
   }
 
   const settings = await getSettings();
