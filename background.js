@@ -162,7 +162,7 @@ async function readText(text, tabId) {
 // Play audio blob
 function playAudio(audioUrl, tabId) {
   return new Promise((resolve, reject) => {
-    currentAudio = new Audio(audioUrl);
+    currentAudio = new Audio();
     isPlaying = true;
 
     currentAudio.onended = () => {
@@ -183,7 +183,15 @@ function playAudio(audioUrl, tabId) {
       reject(new Error('Audio playback failed'));
     };
 
-    currentAudio.play().catch(reject);
+    // Wait for audio to be fully loaded before playing
+    currentAudio.oncanplaythrough = () => {
+      currentAudio.play().catch(reject);
+    };
+
+    // Preload the entire audio file
+    currentAudio.preload = 'auto';
+    currentAudio.src = audioUrl;
+    currentAudio.load();
   });
 }
 
