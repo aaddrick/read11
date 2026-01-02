@@ -38,6 +38,13 @@ browser.runtime.onInstalled.addListener(async () => {
   if (!result.settings) {
     await browser.storage.local.set({ settings: DEFAULT_SETTINGS });
   }
+
+  // Pre-initialize Kokoro in background (non-blocking)
+  setTimeout(() => {
+    initKokoroWorker().then(ready => {
+      if (ready) console.log('Read11: Kokoro pre-initialized');
+    }).catch(() => {});
+  }, 2000);
 });
 
 // Handle context menu clicks
@@ -500,6 +507,34 @@ async function initKokoroWorker() {
 async function generateAudioKokoro(text, tabId) {
   if (!text || text.trim().length === 0) {
     throw new Error('No text provided');
+  }
+
+  // Limit text length for Kokoro (WASM is slow for long text)
+  // ~500 chars ≈ 30 seconds of audio, reasonable for WASM
+  const maxLength = 500;
+  if (text.length > maxLength) {
+    // Try to cut at sentence boundary
+    let cutText = text.substring(0, maxLength);
+    const lastPeriod = cutText.lastIndexOf('.');
+    const lastQuestion = cutText.lastIndexOf('?');
+    const lastExclaim = cutText.lastIndexOf('!');
+    const lastSentence = Math.max(lastPeriod, lastQuestion, lastExclaim);
+
+    if (lastSentence > maxLength * 0.5) {
+      cutText = text.substring(0, lastSentence + 1);
+    }
+
+    text = cutText;
+    console.log('Read11: Trimmed text to', text.length, 'chars for Kokoro');
+
+    // Notify user
+    if (tabId) {
+      browser.tabs.sendMessage(tabId, {
+        action: 'updateLoadingStatus',
+        message: 'Text trimmed for offline mode...',
+        isDownloading: false
+      }).catch(() => {});
+    }
   }
 
   const settings = await getSettings();
