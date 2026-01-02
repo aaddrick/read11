@@ -1,57 +1,85 @@
 // Read11 - Popup Script
 
-document.addEventListener('DOMContentLoaded', init);
-
-async function init() {
-  // Get current status
-  const status = await browser.runtime.sendMessage({ action: 'getStatus' });
-  updateStatus(status.isPlaying);
-
-  // Get settings
-  const result = await browser.storage.local.get('settings');
-  const settings = result.settings || {};
-
-  // Check if API key is configured
-  if (!settings.apiKey) {
-    showConfigWarning();
-  }
-
-  // Set auto-read toggle state
-  document.getElementById('auto-read-toggle').checked = settings.autoRead || false;
-
-  // Set up event listeners
+document.addEventListener('DOMContentLoaded', () => {
+  // Set up event listeners FIRST (before any async operations)
   setupEventListeners();
-}
+
+  // Then try to load state (can fail without breaking UI)
+  loadState();
+});
 
 function setupEventListeners() {
+  // Open options - set this up immediately
+  document.getElementById('open-options').addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const optionsUrl = browser.runtime.getURL('options.html');
+    browser.tabs.create({ url: optionsUrl });
+    window.close();
+  });
+
   // Read page button
   document.getElementById('read-page').addEventListener('click', async () => {
-    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-    if (tabs[0]) {
-      browser.tabs.sendMessage(tabs[0].id, { action: 'readPageContent' });
-      updateStatus(true);
+    try {
+      const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+      if (tabs[0]) {
+        browser.tabs.sendMessage(tabs[0].id, { action: 'readPageContent' });
+        updateStatus(true);
+      }
+    } catch (err) {
+      console.error('Read page error:', err);
     }
   });
 
   // Stop button
   document.getElementById('stop-reading').addEventListener('click', async () => {
-    await browser.runtime.sendMessage({ action: 'stop' });
-    updateStatus(false);
+    try {
+      await browser.runtime.sendMessage({ action: 'stop' });
+      updateStatus(false);
+    } catch (err) {
+      console.error('Stop error:', err);
+    }
   });
 
   // Auto-read toggle
   document.getElementById('auto-read-toggle').addEventListener('change', async (e) => {
-    await browser.runtime.sendMessage({
-      action: 'setAutoRead',
-      enabled: e.target.checked
-    });
+    try {
+      await browser.runtime.sendMessage({
+        action: 'setAutoRead',
+        enabled: e.target.checked
+      });
+    } catch (err) {
+      console.error('Toggle auto-read error:', err);
+    }
   });
+}
 
-  // Open options
-  document.getElementById('open-options').addEventListener('click', (e) => {
-    e.preventDefault();
-    browser.tabs.create({ url: browser.runtime.getURL('options.html') });
-  });
+async function loadState() {
+  try {
+    // Get current status
+    const status = await browser.runtime.sendMessage({ action: 'getStatus' });
+    if (status) {
+      updateStatus(status.isPlaying);
+    }
+  } catch (err) {
+    console.log('Could not get status:', err);
+  }
+
+  try {
+    // Get settings
+    const result = await browser.storage.local.get('settings');
+    const settings = result.settings || {};
+
+    // Check if API key is configured
+    if (!settings.apiKey) {
+      showConfigWarning();
+    }
+
+    // Set auto-read toggle state
+    document.getElementById('auto-read-toggle').checked = settings.autoRead || false;
+  } catch (err) {
+    console.log('Could not load settings:', err);
+  }
 }
 
 function updateStatus(isPlaying) {
