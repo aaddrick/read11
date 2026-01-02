@@ -58,8 +58,10 @@
     }
   },
   "web_accessible_resources": [
-    "kokoro-worker.html"
+    "kokoro-worker.html",
+    "kokoro-worker.js"
   ],
+  "content_security_policy": "script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; object-src 'self'",
   "browser_specific_settings": {
     "gecko": {
       "id": "read11@aaddrick.com",
