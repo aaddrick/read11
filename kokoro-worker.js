@@ -50,7 +50,10 @@ async function initTTS() {
 
   try {
     // Dynamic import from CDN
-    const { KokoroTTS } = await import('https://cdn.jsdelivr.net/npm/kokoro-js@1/+esm');
+    const kokoroModule = await import('https://cdn.jsdelivr.net/npm/kokoro-js@1/+esm');
+    const KokoroTTS = kokoroModule.KokoroTTS;
+    // Make TextSplitterStream available globally for streaming
+    window.TextSplitterStream = kokoroModule.TextSplitterStream;
 
     // Check for WebGPU support (much faster than WASM)
     let device = 'wasm';
@@ -177,33 +180,101 @@ browser.runtime.onMessage.addListener((message, sender) => {
 
       // Return immediately, send audio via separate message to avoid timeout
       const targetTabId = message.targetTabId;
+      const textLength = message.text.length;
+      const useStreaming = message.text.length > 100; // Stream for longer text
 
       (async () => {
         try {
+          const genStartTime = Date.now();
           statusEl.textContent = 'Generating speech...';
-          notifyStatus('generating', { message: 'Generating speech...' });
-
-          const audio = await tts.generate(message.text, {
-            voice: message.voice || 'af_heart'
+          notifyStatus('generating', {
+            message: `Generating (${textLength} chars)...`,
+            stage: 'generating'
           });
 
-          const blob = audio.toBlob();
-          const arrayBuffer = await blob.arrayBuffer();
-          const base64 = arrayBufferToBase64(arrayBuffer);
+          console.log(`Read11: Starting ${useStreaming ? 'streaming' : 'batch'} generation for ${textLength} chars`);
+
+          if (useStreaming && TextSplitterStream) {
+            // Streaming mode: send chunks as they're generated
+            const splitter = new TextSplitterStream();
+            const stream = tts.stream(splitter, { voice: message.voice || 'af_heart' });
+
+            let chunkIndex = 0;
+            let firstChunkTime = null;
+
+            // Start consuming the stream
+            const streamConsumer = (async () => {
+              for await (const { text, audio } of stream) {
+                const blob = audio.toBlob();
+                const arrayBuffer = await blob.arrayBuffer();
+                const base64 = arrayBufferToBase64(arrayBuffer);
+
+                if (chunkIndex === 0) {
+                  firstChunkTime = ((Date.now() - genStartTime) / 1000).toFixed(1);
+                  console.log(`Read11: First chunk ready in ${firstChunkTime}s`);
+                }
+
+                browser.runtime.sendMessage({
+                  action: 'kokoro-audio-chunk',
+                  audioData: base64,
+                  mimeType: 'audio/wav',
+                  targetTabId: targetTabId,
+                  chunkIndex: chunkIndex,
+                  isFirst: chunkIndex === 0
+                });
+
+                chunkIndex++;
+                statusEl.textContent = `Generating chunk ${chunkIndex}...`;
+              }
+            })();
+
+            // Feed text to the splitter
+            splitter.push(message.text);
+            splitter.close();
+
+            // Wait for stream to complete
+            await streamConsumer;
+
+            const genTime = ((Date.now() - genStartTime) / 1000).toFixed(1);
+            console.log(`Read11: Streaming generation completed in ${genTime}s, ${chunkIndex} chunks`);
+
+            // Signal end of stream
+            browser.runtime.sendMessage({
+              action: 'kokoro-audio-chunk',
+              targetTabId: targetTabId,
+              isFinal: true,
+              genTimeSeconds: parseFloat(genTime),
+              firstChunkSeconds: parseFloat(firstChunkTime)
+            });
+
+          } else {
+            // Batch mode for short text
+            const audio = await tts.generate(message.text, {
+              voice: message.voice || 'af_heart'
+            });
+
+            const genTime = ((Date.now() - genStartTime) / 1000).toFixed(1);
+            console.log(`Read11: Batch generation completed in ${genTime}s for ${textLength} chars`);
+
+            const blob = audio.toBlob();
+            const arrayBuffer = await blob.arrayBuffer();
+            const base64 = arrayBufferToBase64(arrayBuffer);
+
+            browser.runtime.sendMessage({
+              action: 'kokoro-audio-ready',
+              audioData: base64,
+              mimeType: 'audio/wav',
+              targetTabId: targetTabId,
+              genTimeSeconds: parseFloat(genTime)
+            });
+          }
 
           statusEl.textContent = 'Kokoro TTS ready';
-          notifyStatus('ready', { message: 'Kokoro TTS ready' });
+          notifyStatus('ready', { message: 'Generation complete', stage: 'ready' });
 
-          // Send audio to background script
-          browser.runtime.sendMessage({
-            action: 'kokoro-audio-ready',
-            audioData: base64,
-            mimeType: 'audio/wav',
-            targetTabId: targetTabId
-          });
         } catch (error) {
           statusEl.textContent = 'Generation failed: ' + error.message;
-          notifyStatus('error', { message: error.message });
+          notifyStatus('error', { message: error.message, stage: 'error' });
           console.error('Read11: Kokoro generate error:', error);
 
           browser.runtime.sendMessage({

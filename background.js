@@ -681,13 +681,14 @@ browser.runtime.onMessage.addListener((message, sender) => {
     console.log('Read11: Kokoro status:', message.status, message.message);
 
     // Forward to all tabs for UI updates
-    if (message.status === 'downloading' || message.status === 'loading') {
+    if (['downloading', 'loading', 'generating'].includes(message.status)) {
       browser.tabs.query({}).then(tabs => {
         for (const tab of tabs) {
           browser.tabs.sendMessage(tab.id, {
             action: 'updateLoadingStatus',
             message: message.message,
             progress: message.progress,
+            stage: message.stage || message.status,
             isDownloading: message.status === 'downloading'
           }).catch(() => {});
         }
@@ -697,7 +698,8 @@ browser.runtime.onMessage.addListener((message, sender) => {
 
   // Handle completed audio from Kokoro worker
   if (message.action === 'kokoro-audio-ready') {
-    console.log('Read11: Kokoro audio ready, sending to tab:', message.targetTabId);
+    console.log('Read11: Kokoro audio ready, sending to tab:', message.targetTabId,
+      `(generated in ${message.genTimeSeconds}s)`);
 
     if (message.targetTabId) {
       browser.tabs.sendMessage(message.targetTabId, {
@@ -708,6 +710,35 @@ browser.runtime.onMessage.addListener((message, sender) => {
       }).catch((err) => {
         console.error('Read11: Failed to send audio to tab:', err);
       });
+    }
+  }
+
+  // Handle streaming audio chunks from Kokoro worker
+  if (message.action === 'kokoro-audio-chunk') {
+    if (message.isFinal) {
+      console.log(`Read11: Kokoro streaming complete. First chunk: ${message.firstChunkSeconds}s, Total: ${message.genTimeSeconds}s`);
+
+      if (message.targetTabId) {
+        browser.tabs.sendMessage(message.targetTabId, {
+          action: 'streamEnd',
+          engine: 'kokoro'
+        }).catch(() => {});
+      }
+    } else {
+      console.log(`Read11: Kokoro chunk ${message.chunkIndex} ready`);
+
+      if (message.targetTabId) {
+        browser.tabs.sendMessage(message.targetTabId, {
+          action: 'playAudioChunk',
+          audioData: message.audioData,
+          mimeType: message.mimeType,
+          isFirst: message.isFirst,
+          chunkIndex: message.chunkIndex,
+          engine: 'kokoro'
+        }).catch((err) => {
+          console.error('Read11: Failed to send chunk to tab:', err);
+        });
+      }
     }
   }
 

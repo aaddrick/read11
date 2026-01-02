@@ -61,7 +61,10 @@
         playAudioFromBase64(message.audioData, message.mimeType);
         break;
       case 'playAudioChunk':
-        handleAudioChunk(message.audioData, message.isFirst, message.isFinal);
+        handleStreamingChunk(message.audioData, message.isFirst, message.chunkIndex);
+        break;
+      case 'streamEnd':
+        handleStreamEnd();
         break;
       case 'stopAudio':
         stopAudio();
@@ -90,7 +93,7 @@
         break;
       case 'updateLoadingStatus':
         isDownloading = message.isDownloading || false;
-        setWidgetState('loading', message.message, message.progress);
+        setWidgetState('loading', message.message, message.progress, message.stage);
         break;
     }
   }
@@ -207,8 +210,8 @@
     setReadingState(false);
   }
 
-  // Handle streaming audio chunk (PCM format)
-  async function handleAudioChunk(base64Data, isFirst, isFinal) {
+  // Handle streaming WAV audio chunk from Kokoro
+  async function handleStreamingChunk(base64Data, isFirst, chunkIndex) {
     try {
       // Initialize audio context if needed
       if (!audioContext) {
@@ -225,12 +228,15 @@
         isStreamingPlayback = true;
         nextPlayTime = audioContext.currentTime;
         setWidgetState('playing');
+        console.log('Read11: Starting streaming playback');
       }
 
       if (base64Data && base64Data.length > 0) {
-        // Convert base64 to PCM audio buffer
+        // Convert base64 to ArrayBuffer
         const arrayBuffer = base64ToArrayBuffer(base64Data);
-        const audioBuffer = createPCMAudioBuffer(arrayBuffer);
+
+        // Decode WAV audio
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
 
         // Create and schedule source
         const source = audioContext.createBufferSource();
@@ -251,21 +257,9 @@
         source.onended = () => {
           const idx = audioQueue.indexOf(source);
           if (idx > -1) audioQueue.splice(idx, 1);
-
-          // Check if all playback is done
-          if (audioQueue.length === 0 && isFinal) {
-            isStreamingPlayback = false;
-            setReadingState(false);
-          }
         };
 
-        console.log('Read11: Scheduled chunk, duration:', audioBuffer.duration.toFixed(2), 's, queue:', audioQueue.length);
-      }
-
-      if (isFinal && audioQueue.length === 0) {
-        // No audio was played
-        isStreamingPlayback = false;
-        setReadingState(false);
+        console.log(`Read11: Scheduled chunk ${chunkIndex}, duration: ${audioBuffer.duration.toFixed(2)}s, queue: ${audioQueue.length}`);
       }
 
     } catch (error) {
@@ -275,22 +269,21 @@
     }
   }
 
-  // Create AudioBuffer from PCM data (16-bit signed, 44100 Hz, mono)
-  function createPCMAudioBuffer(arrayBuffer) {
-    const dataView = new DataView(arrayBuffer);
-    const numSamples = arrayBuffer.byteLength / 2; // 16-bit = 2 bytes per sample
+  // Handle end of streaming
+  function handleStreamEnd() {
+    console.log('Read11: Stream ended, waiting for queue to finish');
 
-    const audioBuffer = audioContext.createBuffer(1, numSamples, 44100);
-    const channelData = audioBuffer.getChannelData(0);
-
-    for (let i = 0; i < numSamples; i++) {
-      // Read 16-bit signed integer (little-endian)
-      const sample = dataView.getInt16(i * 2, true);
-      // Convert to float (-1.0 to 1.0)
-      channelData[i] = sample / 32768;
-    }
-
-    return audioBuffer;
+    // Check periodically if queue is empty
+    const checkQueue = () => {
+      if (audioQueue.length === 0) {
+        isStreamingPlayback = false;
+        setReadingState(false);
+        console.log('Read11: All chunks played');
+      } else {
+        setTimeout(checkQueue, 100);
+      }
+    };
+    checkQueue();
   }
 
   function handleVisibilityChange() {
@@ -331,27 +324,44 @@
     });
   }
 
-  function setWidgetState(state, message = null, progress = null) {
-    // States: 'hidden', 'loading', 'downloading', 'playing'
+  function setWidgetState(state, message = null, progress = null, stage = null) {
+    // States: 'hidden', 'loading', 'generating', 'playing'
+    // Stages: 'init', 'downloading', 'generating', 'ready'
     if (!statusIndicator) return;
 
     const icon = statusIndicator.querySelector('.read11-icon');
     const text = statusIndicator.querySelector('.read11-text');
     const progressBar = statusIndicator.querySelector('.read11-progress');
 
+    // Remove all state classes
+    statusIndicator.classList.remove(
+      'read11-hidden', 'read11-visible', 'read11-loading',
+      'read11-playing', 'read11-downloading', 'read11-generating'
+    );
+
     switch (state) {
       case 'loading':
-        statusIndicator.classList.remove('read11-hidden');
         statusIndicator.classList.add('read11-visible', 'read11-loading');
-        statusIndicator.classList.remove('read11-playing', 'read11-downloading');
-        icon.textContent = isDownloading ? '📥' : '⏳';
+
+        // Different icons/colors based on stage
+        if (isDownloading || stage === 'downloading') {
+          icon.textContent = '📥';
+          statusIndicator.classList.add('read11-downloading');
+        } else if (stage === 'generating') {
+          icon.textContent = '🧠';
+          statusIndicator.classList.add('read11-generating');
+        } else {
+          icon.textContent = '⏳';
+        }
 
         if (message) {
           text.textContent = message;
         } else if (isDownloading) {
           text.textContent = 'Downloading model...';
+        } else if (stage === 'generating') {
+          text.textContent = 'Generating...';
         } else {
-          text.textContent = 'Loading...';
+          text.textContent = 'Initializing...';
         }
 
         // Show/update progress bar if downloading
@@ -365,17 +375,15 @@
         }
         break;
       case 'playing':
-        statusIndicator.classList.remove('read11-hidden', 'read11-loading', 'read11-downloading');
         statusIndicator.classList.add('read11-visible', 'read11-playing');
         icon.textContent = '🔊';
         // Show engine indicator
-        const engineLabel = currentEngine === 'kokoro' ? ' (Kokoro)' : currentEngine === 'elevenlabs' ? '' : '';
-        text.textContent = 'Reading...' + engineLabel;
+        const engineLabel = currentEngine === 'kokoro' ? ' (Offline)' : '';
+        text.textContent = 'Playing...' + engineLabel;
         if (progressBar) progressBar.style.display = 'none';
         break;
       case 'hidden':
       default:
-        statusIndicator.classList.remove('read11-visible', 'read11-loading', 'read11-playing', 'read11-downloading');
         statusIndicator.classList.add('read11-hidden');
         if (progressBar) progressBar.style.display = 'none';
         break;

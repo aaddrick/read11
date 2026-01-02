@@ -125,6 +125,16 @@
   box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
 }
 
+/* Generating state (purple/pink) */
+#read11-status.read11-generating .read11-status-content {
+  background: linear-gradient(135deg, #a855f7 0%, #ec4899 100%);
+  box-shadow: 0 4px 20px rgba(168, 85, 247, 0.4);
+}
+
+#read11-status.read11-generating .read11-icon {
+  animation: read11-pulse 1s ease-in-out infinite;
+}
+
 /* Notification Toast */
 .read11-notification {
   position: fixed;
