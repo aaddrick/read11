@@ -19,8 +19,9 @@ const DEFAULT_SETTINGS = {
 let isPlaying = false;
 
 // Initialize extension
-browser.runtime.onInstalled.addListener(() => {
-  // Create context menu
+browser.runtime.onInstalled.addListener(async () => {
+  // Remove existing menu and create fresh
+  await browser.contextMenus.removeAll();
   browser.contextMenus.create({
     id: 'read-selection',
     title: 'Read with Read11',
@@ -28,30 +29,49 @@ browser.runtime.onInstalled.addListener(() => {
   });
 
   // Initialize default settings
-  browser.storage.local.get('settings').then((result) => {
-    if (!result.settings) {
-      browser.storage.local.set({ settings: DEFAULT_SETTINGS });
-    }
-  });
+  const result = await browser.storage.local.get('settings');
+  if (!result.settings) {
+    await browser.storage.local.set({ settings: DEFAULT_SETTINGS });
+  }
 });
 
 // Handle context menu clicks
-browser.contextMenus.onClicked.addListener((info, tab) => {
+browser.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === 'read-selection' && info.selectionText) {
-    readText(info.selectionText, tab.id);
+    try {
+      const audioData = await generateAudio(info.selectionText);
+      if (audioData && tab?.id) {
+        browser.tabs.sendMessage(tab.id, {
+          action: 'playAudio',
+          audioData: audioData
+        });
+      }
+    } catch (error) {
+      console.error('Read11 context menu error:', error);
+      if (tab?.id) {
+        browser.tabs.sendMessage(tab.id, {
+          action: 'error',
+          message: error.message
+        }).catch(() => {});
+      }
+    }
   }
 });
 
 // Handle keyboard shortcuts
-browser.commands.onCommand.addListener((command) => {
+browser.commands.onCommand.addListener(async (command) => {
   if (command === 'read-selection') {
-    browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
-      if (tabs[0]) {
-        browser.tabs.sendMessage(tabs[0].id, { action: 'getSelection' });
-      }
-    });
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tabs[0]) {
+      browser.tabs.sendMessage(tabs[0].id, { action: 'getSelection' });
+    }
   } else if (command === 'stop-reading') {
-    stopReading();
+    // Notify all tabs to stop
+    const tabs = await browser.tabs.query({});
+    for (const tab of tabs) {
+      browser.tabs.sendMessage(tab.id, { action: 'stopAudio' }).catch(() => {});
+    }
+    isPlaying = false;
   } else if (command === 'toggle-auto-read') {
     toggleAutoRead();
   }
@@ -198,7 +218,15 @@ async function testVoice(voiceId, text = 'Hello, this is a test of the Read11 sc
   await browser.storage.local.set({ settings });
 
   try {
-    await readText(text);
+    const audioData = await generateAudio(text);
+    // Send to active tab for playback
+    const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+    if (tabs[0] && audioData) {
+      browser.tabs.sendMessage(tabs[0].id, {
+        action: 'playAudio',
+        audioData: audioData
+      });
+    }
   } finally {
     // Restore original voice
     settings.voiceId = originalVoiceId;
