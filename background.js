@@ -163,8 +163,8 @@ async function generateAudioStreaming(text, tabId) {
     throw new Error('API key not configured');
   }
 
-  // Use streaming endpoint with PCM format for low-latency playback
-  const response = await fetch(`${API_BASE}/text-to-speech/${settings.voiceId}/stream?output_format=pcm_44100`, {
+  // Use streaming endpoint with MP3 format (available on all tiers)
+  const response = await fetch(`${API_BASE}/text-to-speech/${settings.voiceId}/stream?output_format=mp3_44100_128`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -187,64 +187,31 @@ async function generateAudioStreaming(text, tabId) {
     throw new Error(`API error: ${response.status} - ${errorText}`);
   }
 
-  // Stream the audio data
+  // Stream the audio data and accumulate (MP3 needs complete data for decoding)
   const reader = response.body.getReader();
   let chunks = [];
   let totalBytes = 0;
-  let sentFirstChunk = false;
 
   while (true) {
     const { done, value } = await reader.read();
-
     if (done) break;
 
     chunks.push(value);
     totalBytes += value.length;
-
-    // Send first chunk after ~50KB to start playback quickly
-    if (!sentFirstChunk && totalBytes >= 50000) {
-      const combined = concatenateChunks(chunks);
-      const base64 = arrayBufferToBase64(combined.buffer);
-
-      if (tabId) {
-        browser.tabs.sendMessage(tabId, {
-          action: 'playAudioChunk',
-          audioData: base64,
-          isFirst: true,
-          isFinal: false
-        }).catch(() => {});
-      }
-
-      chunks = [];
-      sentFirstChunk = true;
-      console.log('Read11: Sent first chunk:', totalBytes, 'bytes');
-    }
   }
 
-  // Send remaining data
-  if (chunks.length > 0) {
-    const combined = concatenateChunks(chunks);
-    const base64 = arrayBufferToBase64(combined.buffer);
+  // Combine all chunks and send to content script
+  const combined = concatenateChunks(chunks);
+  const base64 = arrayBufferToBase64(combined.buffer);
 
-    if (tabId) {
-      browser.tabs.sendMessage(tabId, {
-        action: 'playAudioChunk',
-        audioData: base64,
-        isFirst: !sentFirstChunk,
-        isFinal: true
-      }).catch(() => {});
-    }
-  } else if (sentFirstChunk && tabId) {
-    // Signal end if we already sent data
+  console.log('Read11: Audio streamed, total size:', totalBytes, 'bytes');
+
+  if (tabId) {
     browser.tabs.sendMessage(tabId, {
-      action: 'playAudioChunk',
-      audioData: '',
-      isFirst: false,
-      isFinal: true
+      action: 'playAudio',
+      audioData: base64
     }).catch(() => {});
   }
-
-  console.log('Read11: Total audio size:', totalBytes, 'bytes');
 }
 
 // Concatenate Uint8Array chunks
